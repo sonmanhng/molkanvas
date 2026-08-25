@@ -1,0 +1,53 @@
+{
+  "name": "molkanvas",
+  "productName": "MolKanvas",
+  "description": "A professional chemical structure drawing tool with NMR/IR prediction, 3D visualization, and BioDraw.",
+  "author": {
+    "name": "Manh-Son Nguyen",
+    "email": "manh-son.nguyen@example.com"
+  },
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "electron:dev": "NODE_ENV=development electron .",
+    "app:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && npm run electron:dev\"",
+    "app:build": "npm run build && electron-builder"
+  },
+  "build": {
+    "appId": "com.manhson.molkanvas",
+    "productName": "MolKanvas",
+    "copyright": "Copyright © 2025 Manh-Son Nguyen",
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.education"
+    }
+  },
+  "dependencies": {
+    "3dmol": "^2.5.5",
+    "lucide-react": "^1.34.0",
+    "openchemlib": "^9.25.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "recharts": "^3.10.1",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.1.0",
+    "concurrently": "^10.0.5",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
+    "oxlint": "^1.79.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.2.2",
+    "wait-on": "^9.1.0"
+  }
+}

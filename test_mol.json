@@ -1,0 +1,4 @@
+{
+  "atoms": [{"id": 1, "element": "C"}, {"id": 2, "element": "O"}],
+  "bonds": [{"source": 1, "target": 2, "type": "BOND_DOUBLE"}]
+}

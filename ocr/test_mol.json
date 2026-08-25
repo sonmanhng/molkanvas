@@ -1,0 +1,13 @@
+{
+  "atoms": [
+    {"id": "a1", "x": 100, "y": 100, "element": "C"},
+    {"id": "a2", "x": 150, "y": 150, "element": "C"},
+    {"id": "a3", "x": 200, "y": 100, "element": "C"},
+    {"id": "a4", "x": 100, "y": 200, "element": "O"}
+  ],
+  "bonds": [
+    {"id": "b1", "source": "a1", "target": "a2", "type": "DOUBLE"},
+    {"id": "b2", "source": "a2", "target": "a3", "type": "SINGLE"},
+    {"id": "b3", "source": "a1", "target": "a4", "type": "SINGLE"}
+  ]
+}
