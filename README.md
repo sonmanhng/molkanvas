@@ -67,6 +67,7 @@ molkanvas/                        ← Copy toàn bộ folder này
 | **Node.js** | ≥ 18 LTS | https://nodejs.org |
 | **Python** | ≥ 3.10 | https://www.python.org *(tick "Add to PATH")* |
 
+Khuyến nghị sử dụng Python 3.12 (Thời điểm hiện tại hại chế sử dụng phiên bản Python quá mới như 3.14)
 ---
 
 ### Windows — Cài 1-click
