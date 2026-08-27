@@ -29,17 +29,19 @@ def main():
             continue
             
         btype = Chem.BondType.SINGLE
-        if b['type'] == 'BOND_DOUBLE':
+        if b['type'] == 'DOUBLE' or b['type'] == 'BOND_DOUBLE':
             btype = Chem.BondType.DOUBLE
-        elif b['type'] == 'BOND_TRIPLE':
+        elif b['type'] == 'TRIPLE' or b['type'] == 'BOND_TRIPLE':
             btype = Chem.BondType.TRIPLE
+        elif b['type'] == 'AROMATIC' or b['type'] == 'BOND_AROMATIC':
+            btype = Chem.BondType.AROMATIC
             
         idx = m.AddBond(src, tgt, btype)
         
         # Optional: set stereo for wedge/hash
-        if b['type'] == 'BOND_WEDGE':
+        if b['type'] == 'WEDGE' or b['type'] == 'BOND_WEDGE':
             m.GetBondBetweenAtoms(src, tgt).SetBondDir(Chem.BondDir.BEGINWEDGE)
-        elif b['type'] == 'BOND_HASH':
+        elif b['type'] == 'HASH' or b['type'] == 'BOND_HASH':
             m.GetBondBetweenAtoms(src, tgt).SetBondDir(Chem.BondDir.BEGINDASH)
 
     try:
@@ -65,10 +67,14 @@ def main():
         if res == -1:
             raise ValueError("RDKit failed to generate 3D coordinates for this complex molecule.")
             
-        # Optimization might also fail for very large structures, we can ignore its errors
+        # Optimize structure using MMFF94 force field if possible, else fallback to UFF
         try:
-            AllChem.UFFOptimizeMolecule(m2)
-        except Exception:
+            if AllChem.MMFFHasAllMoleculeParams(m2):
+                AllChem.MMFFOptimizeMolecule(m2, maxIters=1000)
+            else:
+                AllChem.UFFOptimizeMolecule(m2, maxIters=1000)
+        except Exception as opt_err:
+            print(f"Optimization failed: {str(opt_err)}", file=sys.stderr)
             pass
         
         sdf = Chem.MolToMolBlock(m2)

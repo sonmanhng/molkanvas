@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <div id="root"></div>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+  <script type="text/babel">
+    function App() {
+      const [show, setShow] = React.useState(false);
+      return (
+        <div>
+          <div 
+            style={{width: 200, height: 200, background: 'lightgray'}}
+            onPointerDown={(e) => {
+              // e.preventDefault(); // Try with and without
+              console.log('pointerdown');
+              setShow(true);
+            }}
+          >
+            Click me
+          </div>
+          {show && (
+            <input 
+              autoFocus 
+              onBlur={() => {
+                console.log('blur');
+                setShow(false);
+              }} 
+            />
+          )}
+        </div>
+      );
+    }
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>

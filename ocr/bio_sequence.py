@@ -85,7 +85,7 @@ def parse_sequence(seq, seq_type):
     except Exception as e:
         return {"error": str(e)}
 
-if __name__ == "__main__":
+def main():
     try:
         input_data = sys.stdin.read()
         data = json.loads(input_data)
@@ -96,3 +96,6 @@ if __name__ == "__main__":
         print(json.dumps(result))
     except Exception as e:
         print(json.dumps({"error": str(e)}))
+
+if __name__ == "__main__":
+    main()

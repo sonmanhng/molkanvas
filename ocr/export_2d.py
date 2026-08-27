@@ -49,10 +49,10 @@ def main():
             
         idx = m.AddBond(src, tgt, btype)
         
-        # Optional: set stereo for wedge/hash
-        if b['type'] == 'BOND_WEDGE':
+        # Note: export_2d doesn't care much about 3D wedges, but we preserve it for rdkit semantics
+        if b['type'] == 'WEDGE' or b['type'] == 'BOND_WEDGE':
             m.GetBondBetweenAtoms(src, tgt).SetBondDir(Chem.BondDir.BEGINWEDGE)
-        elif b['type'] == 'BOND_HASH':
+        elif b['type'] == 'HASH' or b['type'] == 'BOND_HASH':
             m.GetBondBetweenAtoms(src, tgt).SetBondDir(Chem.BondDir.BEGINDASH)
 
     try:

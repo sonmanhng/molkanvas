@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   chemblSearch: (smiles) => ipcRenderer.invoke('chembl-search', smiles),
   predictNmr: (jsonPayload) => ipcRenderer.invoke('predict-nmr', jsonPayload),
   predictIr: (jsonPayload, mode) => ipcRenderer.invoke('predict-ir', jsonPayload, mode),
+  analyzeConformers: (smiles) => ipcRenderer.invoke('analyze-conformers', smiles),
   saveFile: (content, options) => ipcRenderer.invoke('save-file', content, options),
   openFile: (options) => ipcRenderer.invoke('open-file', options)
 });

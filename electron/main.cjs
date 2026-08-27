@@ -6,12 +6,51 @@ const { execFile, spawn } = require('node:child_process');
 
 const isDev = process.env.NODE_ENV === 'development';
 
+function getPythonExecutable() {
+  if (app.isPackaged) {
+    // In --onedir mode, the executable is inside the folder
+    return path.join(process.resourcesPath, 'molkanvas-backend', 'molkanvas-backend');
+  }
+  return path.join(__dirname, '../ocr/.venv/bin/python3');
+}
+
+function getPythonArgs(commandName, additionalArgs = []) {
+  if (app.isPackaged) {
+    return [commandName, ...additionalArgs];
+  } else {
+    const cliPath = path.join(__dirname, '../ocr/cli.py');
+    return [cliPath, commandName, ...additionalArgs];
+  }
+}
+
+function runPythonCommand(commandName, args) {
+  return new Promise((resolve, reject) => {
+    const executable = getPythonExecutable();
+    const cmdArgs = getPythonArgs(commandName, args);
+    
+    execFile(executable, cmdArgs, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`[${commandName}] Error:`, stderr || error);
+        reject(stderr || error.message);
+      } else {
+        resolve(stdout);
+      }
+    });
+  });
+}
+
+function spawnPythonCommand(commandName) {
+  const executable = getPythonExecutable();
+  const cmdArgs = getPythonArgs(commandName);
+  return spawn(executable, cmdArgs);
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
     title: 'MolKanvas',
-    titleBarStyle: 'hiddenInset', // Mac style window
+    titleBarStyle: 'hiddenInset',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
@@ -20,7 +59,6 @@ function createWindow() {
   });
 
   if (isDev) {
-    // Try to load from known Vite ports
     const devUrl = process.env.VITE_DEV_URL || 'http://localhost:5173';
     win.loadURL(devUrl);
   } else {
@@ -30,159 +68,72 @@ function createWindow() {
 
 app.whenReady().then(() => {
   ipcMain.handle('recognize-image', async (event, buffer, fileName) => {
-    return new Promise((resolve, reject) => {
-      const tempPath = path.join(os.tmpdir(), fileName || 'temp_image.png');
-      try {
-        fs.writeFileSync(tempPath, Buffer.from(buffer));
-      } catch (err) {
-        return reject('Cannot write temp file: ' + err.message);
-      }
-
-      // We are in chemdraw-web/electron, so the ocr worker is at ../ocr/worker.py
-      const scriptPath = path.join(__dirname, '../ocr/worker.py');
-      const venvPython = path.join(__dirname, '../ocr/.venv/bin/python');
-      
-      execFile(venvPython, [scriptPath, tempPath], (error, stdout, stderr) => {
-        if (error) {
-          console.error('OCR Error:', stderr || error);
-          reject(stderr || error.message);
-        } else {
-          resolve(stdout.trim());
-        }
-      });
-    });
+    const tempPath = path.join(os.tmpdir(), fileName || 'temp_image.png');
+    fs.writeFileSync(tempPath, Buffer.from(buffer));
+    try {
+      const stdout = await runPythonCommand('worker', [tempPath]);
+      return stdout.trim();
+    } catch (err) {
+      throw new Error(err);
+    }
   });
 
-  // Handle 3D coordinates generation
   ipcMain.handle('generate-3d', async (event, jsonPayload) => {
-    return new Promise((resolve, reject) => {
-      const tempPath = path.join(os.tmpdir(), 'mol_graph_3d.json');
-      try {
-        fs.writeFileSync(tempPath, jsonPayload);
-      } catch (err) {
-        return reject('Cannot write temp file: ' + err.message);
-      }
-
-      const scriptPath = path.join(__dirname, '../ocr/2d_to_3d.py');
-      const venvPython = path.join(__dirname, '../ocr/.venv/bin/python');
-      
-      execFile(venvPython, [scriptPath, tempPath], (error, stdout, stderr) => {
-        if (error) {
-          console.error('3D Gen Error:', stderr || error);
-          reject(stderr || error.message);
-        } else {
-          resolve(stdout);
-        }
-      });
-    });
+    const tempPath = path.join(os.tmpdir(), 'mol_graph_3d.json');
+    fs.writeFileSync(tempPath, jsonPayload);
+    try {
+      return await runPythonCommand('generate_3d', [tempPath]);
+    } catch (err) {
+      throw new Error(err);
+    }
   });
 
-  // Handle 2D MOL generation
   ipcMain.handle('generate-2d-mol', async (event, jsonPayload) => {
-    return new Promise((resolve, reject) => {
-      const tempPath = path.join(os.tmpdir(), 'mol_graph_2d.json');
-      try {
-        fs.writeFileSync(tempPath, jsonPayload);
-      } catch (err) {
-        return reject('Cannot write temp file: ' + err.message);
-      }
-
-      const scriptPath = path.join(__dirname, '../ocr/export_2d.py');
-      const venvPython = path.join(__dirname, '../ocr/.venv/bin/python');
-      
-      execFile(venvPython, [scriptPath, tempPath], (error, stdout, stderr) => {
-        if (error) {
-          console.error('2D Gen Error:', stderr || error);
-          reject(stderr || error.message);
-        } else {
-          resolve(stdout);
-        }
-      });
-    });
+    const tempPath = path.join(os.tmpdir(), 'mol_graph_2d.json');
+    fs.writeFileSync(tempPath, jsonPayload);
+    try {
+      return await runPythonCommand('export_2d', [tempPath]);
+    } catch (err) {
+      throw new Error(err);
+    }
   });
 
-  // Handle Calculate Properties
   ipcMain.handle('calculate-properties', async (event, jsonPayload) => {
-    return new Promise((resolve, reject) => {
-      const tempPath = path.join(os.tmpdir(), 'mol_props.json');
-      try {
-        fs.writeFileSync(tempPath, jsonPayload);
-      } catch (err) {
-        return reject('Cannot write temp file: ' + err.message);
-      }
-
-      const scriptPath = path.join(__dirname, '../ocr/calc_props.py');
-      const venvPython = path.join(__dirname, '../ocr/.venv/bin/python');
-      
-      execFile(venvPython, [scriptPath, tempPath], (error, stdout, stderr) => {
-        if (error) {
-          console.error('Props Calc Error:', stderr || error);
-          reject(stderr || error.message);
-        } else {
-          try {
-            const result = JSON.parse(stdout);
-            resolve(result);
-          } catch (e) {
-            reject('Invalid JSON output from Python: ' + stdout);
-          }
-        }
-      });
-    });
+    const tempPath = path.join(os.tmpdir(), 'mol_graph_props.json');
+    fs.writeFileSync(tempPath, jsonPayload);
+    try {
+      const stdout = await runPythonCommand('calc_props', [tempPath]);
+      return JSON.parse(stdout);
+    } catch (err) {
+      throw new Error(err);
+    }
   });
 
-  // Handle SMILES to Graph
   ipcMain.handle('smiles-to-graph', async (event, smiles) => {
-    return new Promise((resolve, reject) => {
-      const tempPath = path.join(os.tmpdir(), 'input_smiles.txt');
-      try {
-        fs.writeFileSync(tempPath, smiles);
-      } catch (err) {
-        return reject('Cannot write temp file: ' + err.message);
-      }
-      const scriptPath = path.join(__dirname, '../ocr/smiles_to_graph.py');
-      const venvPython = path.join(__dirname, '../ocr/.venv/bin/python');
-      execFile(venvPython, [scriptPath, tempPath], (error, stdout, stderr) => {
-        if (error) {
-          console.error('SMILES Error:', stderr || error);
-          reject(stderr || error.message);
-        } else {
-          try { resolve(JSON.parse(stdout)); }
-          catch (e) { reject('Invalid JSON: ' + stdout); }
-        }
-      });
-    });
+    const tempPath = path.join(os.tmpdir(), 'smiles_input.txt');
+    fs.writeFileSync(tempPath, smiles);
+    try {
+      const stdout = await runPythonCommand('smiles_to_graph', [tempPath]);
+      return JSON.parse(stdout);
+    } catch (err) {
+      throw new Error(err);
+    }
   });
 
-  // Handle Clean Graph
   ipcMain.handle('clean-graph', async (event, jsonPayload) => {
-    return new Promise((resolve, reject) => {
-      const tempPath = path.join(os.tmpdir(), 'dirty_graph.json');
-      try {
-        fs.writeFileSync(tempPath, jsonPayload);
-      } catch (err) {
-        return reject('Cannot write temp file: ' + err.message);
-      }
-      const scriptPath = path.join(__dirname, '../ocr/clean_graph.py');
-      const venvPython = path.join(__dirname, '../ocr/.venv/bin/python');
-      execFile(venvPython, [scriptPath, tempPath], (error, stdout, stderr) => {
-        if (error) {
-          console.error('Clean Error:', stderr || error);
-          reject(stderr || error.message);
-        } else {
-          try { resolve(JSON.parse(stdout)); }
-          catch (e) { reject('Invalid JSON: ' + stdout); }
-        }
-      });
-    });
+    const tempPath = path.join(os.tmpdir(), 'mol_graph_clean.json');
+    fs.writeFileSync(tempPath, jsonPayload);
+    try {
+      const stdout = await runPythonCommand('clean_graph', [tempPath]);
+      return JSON.parse(stdout);
+    } catch (err) {
+      throw new Error(err);
+    }
   });
 
-  // Handle Analyze Stereo
   ipcMain.handle('analyze-stereo', async (event, data) => {
-    const pythonExecutable = path.join(__dirname, '../ocr/.venv/bin/python');
-    const scriptPath = path.join(__dirname, '../ocr/analyze_stereo.py');
-
-    return new Promise((resolve, reject) => {
-      const process = spawn(pythonExecutable, [scriptPath]);
+    return new Promise((resolve) => {
+      const process = spawnPythonCommand('analyze_stereo');
       let output = '';
       let errorOutput = '';
 
@@ -208,11 +159,8 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('parse-sequence', async (event, data) => {
-    const pythonExecutable = path.join(__dirname, '../ocr/.venv/bin/python');
-    const scriptPath = path.join(__dirname, '../ocr/bio_sequence.py');
-
-    return new Promise((resolve, reject) => {
-      const process = spawn(pythonExecutable, [scriptPath]);
+    return new Promise((resolve) => {
+      const process = spawnPythonCommand('bio_sequence');
       let output = '';
       let errorOutput = '';
 
@@ -240,7 +188,6 @@ app.whenReady().then(() => {
   // ChEMBL API Search
   ipcMain.handle('chembl-search', async (event, smiles) => {
     try {
-      // 1. Search for molecule
       const searchUrl = `https://www.ebi.ac.uk/chembl/api/data/molecule.json?molecule_structures__canonical_smiles__flexmatch=${encodeURIComponent(smiles)}`;
       const searchRes = await fetch(searchUrl);
       if (!searchRes.ok) {
@@ -256,7 +203,6 @@ app.whenReady().then(() => {
       const mol = searchData.molecules[0];
       const chemblId = mol.molecule_chembl_id;
       
-      // 2. Fetch bioactivities
       const actUrl = `https://www.ebi.ac.uk/chembl/api/data/activity.json?molecule_chembl_id=${chemblId}&standard_type__in=IC50,Ki,EC50,Kd&pchembl_value__isnull=false&limit=20`;
       const actRes = await fetch(actUrl);
       if (!actRes.ok) {
@@ -265,69 +211,44 @@ app.whenReady().then(() => {
       }
       const actData = await actRes.json();
       
-      return {
-        molecule: mol,
-        activities: actData.activities || []
-      };
+      return { molecule: mol, activities: actData.activities || [] };
     } catch (err) {
       return { error: 'ChEMBL API request failed: ' + err.message };
     }
   });
 
-  // NMR Prediction (Offline RDKit)
+  // NMR Prediction
   ipcMain.handle('predict-nmr', async (event, jsonPayload) => {
-    return new Promise((resolve, reject) => {
-      const tempPath = path.join(os.tmpdir(), 'mol_nmr.json');
-      try {
-        fs.writeFileSync(tempPath, jsonPayload);
-      } catch (err) {
-        return reject('Cannot write temp file: ' + err.message);
-      }
-
-      const scriptPath = path.join(__dirname, '../ocr/predict_nmr.py');
-      const venvPython = path.join(__dirname, '../ocr/.venv/bin/python');
-      
-      execFile(venvPython, [scriptPath, tempPath], (error, stdout, stderr) => {
-        if (error) {
-          console.error('NMR Calc Error:', stderr || error);
-          reject(stderr || error.message);
-        } else {
-          try {
-            resolve(JSON.parse(stdout));
-          } catch(e) {
-            reject('NMR calc failed to parse JSON: ' + stdout);
-          }
-        }
-      });
-    });
+    const tempPath = path.join(os.tmpdir(), 'mol_nmr.json');
+    fs.writeFileSync(tempPath, jsonPayload);
+    try {
+      const stdout = await runPythonCommand('predict_nmr', [tempPath]);
+      return JSON.parse(stdout);
+    } catch (err) {
+      throw new Error(err);
+    }
   });
 
+  // IR Prediction
   ipcMain.handle('predict-ir', async (event, jsonPayload, mode) => {
-    return new Promise((resolve, reject) => {
-      const tempPath = path.join(os.tmpdir(), 'mol_ir.json');
-      try {
-        fs.writeFileSync(tempPath, jsonPayload);
-      } catch (err) {
-        return reject('Cannot write temp file: ' + err.message);
-      }
+    const tempPath = path.join(os.tmpdir(), 'mol_ir.json');
+    fs.writeFileSync(tempPath, jsonPayload);
+    try {
+      const stdout = await runPythonCommand('predict_ir', [tempPath, mode || 'IR']);
+      return JSON.parse(stdout);
+    } catch (err) {
+      throw new Error(err);
+    }
+  });
 
-      const scriptPath = path.join(__dirname, '../ocr/predict_ir.py');
-      const venvPython = path.join(__dirname, '../ocr/.venv/bin/python');
-      const args = [scriptPath, tempPath, mode || 'IR'];
-      
-      execFile(venvPython, args, (error, stdout, stderr) => {
-        if (error) {
-          console.error('IR/13C Calc Error:', stderr || error);
-          reject(stderr || error.message);
-        } else {
-          try {
-            resolve(JSON.parse(stdout));
-          } catch(e) {
-            reject('Spectrum calc failed to parse JSON: ' + stdout);
-          }
-        }
-      });
-    });
+  // Analyze Conformers
+  ipcMain.handle('analyze-conformers', async (event, smiles) => {
+    try {
+      const stdout = await runPythonCommand('conformer_analysis', [smiles]);
+      return JSON.parse(stdout);
+    } catch (err) {
+      throw new Error(err);
+    }
   });
 
   // Handle File Saving
@@ -338,7 +259,16 @@ app.whenReady().then(() => {
     if (canceled || !filePath) return null;
     
     try {
-      fs.writeFileSync(filePath, content);
+      if (typeof content === 'string' && content.startsWith('data:')) {
+        const matches = content.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+        if (matches && matches.length === 3) {
+          fs.writeFileSync(filePath, Buffer.from(matches[2], 'base64'));
+        } else {
+          fs.writeFileSync(filePath, content);
+        }
+      } else {
+        fs.writeFileSync(filePath, content);
+      }
       return filePath;
     } catch (err) {
       throw new Error(`Failed to save file: ${err.message}`);

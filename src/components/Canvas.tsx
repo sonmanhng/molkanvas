@@ -2,11 +2,36 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useGraphStore } from '../store/graphStore';
 import type { AtomId, BondType } from '../store/graphStore';
 
-export const BOND_LENGTH = 50;
-const ATOM_HIT_R = 14;
-const DBL_OFFSET = 3.5;
-const FONT_SIZE = 12;
-const BOND_WIDTH = 1.5;
+// Style helpers
+export function getStyle() {
+  const style = useGraphStore.getState().documentStyle;
+  if (style === 'ACS_1996') {
+    // Scale factor 2.5 to map physical pt to readable CSS pixels while keeping EXACT ACS 1996 proportions
+    const S = 2.5;
+    return {
+      BOND_LENGTH: 14.4 * S,
+      ATOM_HIT_R: 12,
+      DBL_OFFSET: 14.4 * S * 0.18, // 18% of length
+      FONT_SIZE: 10 * S,
+      FONT_WEIGHT: 'normal',
+      BOND_WIDTH: 0.6 * S,
+      BOLD_WIDTH: 2.0 * S,
+      HASH_SPACING: 2.5 * S,
+      FONT_FAMILY: 'Arial, Helvetica, sans-serif'
+    };
+  }
+  return {
+    BOND_LENGTH: 50,
+    ATOM_HIT_R: 14,
+    DBL_OFFSET: 4,
+    FONT_SIZE: 16,
+    FONT_WEIGHT: 'bold',
+    BOND_WIDTH: 1.5,
+    BOLD_WIDTH: 6.0,
+    HASH_SPACING: 6.0,
+    FONT_FAMILY: 'sans-serif'
+  };
+}
 
 const ELEMENT_COLORS: Record<string, string> = {
   C: '#1a1a1a', H: '#555', O: '#cc4400', N: '#0044cc',
@@ -19,11 +44,19 @@ const IMPLICIT_H: Record<string, number> = {
   C: 4, N: 3, O: 2, S: 2, P: 3, F: 1, Cl: 1, Br: 1, I: 1,
 };
 
+const MAX_VALENCE: Record<string, number[]> = {
+  C: [4], N: [3, 4], O: [2], S: [2, 4, 6], P: [3, 5],
+  F: [1], Cl: [1, 3, 5, 7], Br: [1, 3, 5, 7], I: [1, 3, 5, 7], H: [1]
+};
+
 // Estimate the radius of an atom's visual label (for bond clipping)
 function getAtomRadius(element: string, hCount: number): number {
   if (element === 'C') return 0; // C is invisible, bond goes to center
   const chars = element.length + (hCount > 0 ? 1 + (hCount > 1 ? 1 : 0) : 0);
-  return Math.max(9, chars * 4.5);
+  const { FONT_SIZE } = getStyle();
+  const S = 2.5;
+  // Exact margin calc based on 1.6pt margin scaled
+  return chars * (FONT_SIZE * 0.28) + (1.6 * S); 
 }
 
 // Clip a bond endpoint to stop at atom boundary
@@ -39,9 +72,10 @@ function clipEndpoint(
   return { x: toX - (dx / len) * clip, y: toY - (dy / len) * clip };
 }
 
-function snapAngle(sx: number, sy: number, ex: number, ey: number, len = BOND_LENGTH) {
+function snapAngle(sx: number, sy: number, ex: number, ey: number) {
+  const { BOND_LENGTH } = getStyle();
   const angle = Math.round(Math.atan2(ey - sy, ex - sx) / (Math.PI / 6)) * (Math.PI / 6);
-  return { x: sx + Math.cos(angle) * len, y: sy + Math.sin(angle) * len };
+  return { x: sx + Math.cos(angle) * BOND_LENGTH, y: sy + Math.sin(angle) * BOND_LENGTH };
 }
 
 // Pick best outgoing angle from atom: furthest from all existing bonds, snapped to 30°
@@ -77,6 +111,7 @@ function getBestAngle(atomId: AtomId, atoms: Record<string, any>, bonds: Record<
 }
 
 function ringCoords(cx: number, cy: number, n: number) {
+  const { BOND_LENGTH } = getStyle();
   const r = BOND_LENGTH / (2 * Math.sin(Math.PI / n));
   return Array.from({ length: n }, (_, i) => {
     const a = -Math.PI / 2 + (2 * Math.PI * i) / n;
@@ -106,9 +141,10 @@ function getImplicitHFor(atomId: string, atoms: Record<string, any>, bonds: Reco
 }
 
 function WedgeBond({ x1, y1, x2, y2, color }: { x1:number; y1:number; x2:number; y2:number; color:string }) {
+  const { BOLD_WIDTH } = getStyle();
   const dx = x2 - x1, dy = y2 - y1;
   const len = Math.hypot(dx, dy) || 1;
-  const nx = -dy / len * 3.5, ny = dx / len * 3.5;
+  const nx = -dy / len * (BOLD_WIDTH / 2), ny = dx / len * (BOLD_WIDTH / 2);
   return <polygon
     points={`${x1},${y1} ${x2 + nx},${y2 + ny} ${x2 - nx},${y2 - ny}`}
     fill={color} stroke="none" pointerEvents="none"
@@ -117,33 +153,33 @@ function WedgeBond({ x1, y1, x2, y2, color }: { x1:number; y1:number; x2:number;
 
 // Hash bond (series of thin lines)
 function HashBond({ x1, y1, x2, y2, color }: { x1:number; y1:number; x2:number; y2:number; color:string }) {
+  const { BOLD_WIDTH, HASH_SPACING, BOND_WIDTH } = getStyle();
   const dx = x2 - x1, dy = y2 - y1;
   const len = Math.hypot(dx, dy) || 1;
   const nx = -dy / len, ny = dx / len;
   const lines = [];
-  const N = 6;
+  const N = Math.max(3, Math.floor(len / (HASH_SPACING * 0.7)));
   for (let i = 0; i <= N; i++) {
     const t = i / N;
     const cx = x1 + dx * t, cy = y1 + dy * t;
-    const hw = 1 + t * 3.5;
+    const hw = (BOND_WIDTH / 2) + t * (BOLD_WIDTH / 2);
     lines.push(<line key={i} x1={cx - nx*hw} y1={cy - ny*hw} x2={cx + nx*hw} y2={cy + ny*hw}
-      stroke={color} strokeWidth="1.2" strokeLinecap="round" />);
+      stroke={color} strokeWidth={BOND_WIDTH} strokeLinecap="round" />);
   }
   return <>{lines}</>;
 }
 
 export function Canvas() {
   const store = useGraphStore();
+  const { BOND_LENGTH, BOND_WIDTH, DBL_OFFSET, FONT_SIZE, FONT_FAMILY, ATOM_HIT_R } = getStyle();
   const {
-    atoms, bonds, images, stereoLabels, activeTool, zoom, panX, panY, setViewport,
+    atoms, bonds, images, stereoLabels, zoom, panX, panY, setViewport,
     addAtom, addBond, removeAtom, removeBond, removeImage, moveImage, snapshot,
-    hoveredAtom, setHoveredAtom, hoveredBond, setHoveredBond,
-    selectedAtoms, setSelectedAtoms, moveAtoms,
+    hoveredAtom, selectedAtoms, selectedImages, selectedBonds, setHoveredAtom, setHoveredBond, hoveredBond, setSelectedAtoms, setSelectedBonds, setSelectedImages, activeTool, setActiveTool, moveAtoms, updateSelectionTransforms
   } = store;
 
-  const [drawing, setDrawingState] = useState<{ src: AtomId; x: number; y: number } | null>(null);
-  // ref so pointerup always reads latest value (avoids stale closure on quick click)
-  const drawingRef = useRef<{ src: AtomId; x: number; y: number } | null>(null);
+  const [drawing, setDrawingState] = useState<{ src: AtomId | '__pending__'; x: number; y: number, pendingX?: number, pendingY?: number } | null>(null);
+  const drawingRef = useRef<typeof drawing>(null);
   const setDrawing = (v: typeof drawing) => { drawingRef.current = v; setDrawingState(v); };
 
   const [dragging, setDragging] = useState<{ ids: AtomId[]; lastX: number; lastY: number } | null>(null);
@@ -158,6 +194,19 @@ export function Canvas() {
   const selBoxRef = useRef<typeof selBox>(null);
   const setSelBoxS = (v: typeof selBox) => { selBoxRef.current = v; setSelBox(v); };
 
+  const [scaling, setScaling] = useState<{
+    initialDist: number;
+    initialAngle: number;
+    centroid: {x: number, y: number};
+    atomsData: Record<string, {x: number, y: number}>;
+    imagesData: Record<string, {x: number, y: number, width: number, height: number}>;
+  } | null>(null);
+  const scalingRef = useRef<typeof scaling>(null);
+  const setScalingS = (v: typeof scaling) => { scalingRef.current = v; setScaling(v); };
+
+  const [editingText, setEditingText] = useState<{ id?: AtomId; x: number; y: number; val: string } | null>(null);
+  const editingTextCreatedAt = useRef(0);
+
   const [panning, setPanningState] = useState<{ lastX: number; lastY: number } | null>(null);
   const panningRef = useRef<typeof panning>(null);
   const panMovedRef = useRef<boolean>(false);
@@ -168,24 +217,36 @@ export function Canvas() {
   // ── Keyboard shortcuts ──────────────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
+
       if (e.key === 'z' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         if (e.shiftKey) store.redo(); else store.undo();
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         selectedAtoms.forEach(id => { snapshot(); removeAtom(id); });
+        selectedImages.forEach(id => { snapshot(); removeImage(id); });
         setSelectedAtoms(new Set());
+        setSelectedImages(new Set());
       }
-      if (e.key === 'Escape') { setSelectedAtoms(new Set()); }
+      if (e.key === 'Escape') { setSelectedAtoms(new Set()); setSelectedImages(new Set()); }
       const toolKeys: Record<string, any> = {
-        's': 'SELECT', 'b': 'BOND_SINGLE', 'd': 'BOND_DOUBLE', 'e': 'ERASER',
-        '6': 'RING_CYCLOHEXANE', '5': 'RING_CYCLOPENTANE', 'z': undefined,
+        's': 'SELECT', 'p': 'PAN',
+        'e': 'ERASER', 't': 'TEXT',
+        'b': 'BOND_SINGLE', 'v': 'BOND_DOUBLE',
+        'h': 'RING_CYCLOHEXANE', 'f': 'RING_BENZENE',
+        'c': 'ATOM_C', 'n': 'ATOM_N', 'o': 'ATOM_O', 'x': 'ATOM_S'
       };
-      if (!e.metaKey && !e.ctrlKey && toolKeys[e.key]) store.setActiveTool(toolKeys[e.key]);
+      const key = e.key.toLowerCase();
+      if (toolKeys[key] && !e.ctrlKey && !e.metaKey) {
+        setActiveTool(toolKeys[key]);
+      };
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedAtoms, store, snapshot, removeAtom, setSelectedAtoms]);
+  }, [selectedAtoms, selectedImages, store, snapshot, removeAtom, removeImage, setSelectedAtoms, setSelectedImages, setActiveTool]);
 
   // ── Coord helpers ────────────────────────────────────────────────────────────
   const svgPt = useCallback((e: { clientX: number; clientY: number }) => {
@@ -195,7 +256,6 @@ export function Canvas() {
     return { x: (e.clientX - ctm.e) / ctm.a, y: (e.clientY - ctm.f) / ctm.d };
   }, []);
 
-  // SVG → world (inverse of zoom+pan transform)
   const svgToWorld = useCallback((sx: number, sy: number) => ({
     x: (sx - panX) / zoom,
     y: (sy - panY) / zoom,
@@ -212,7 +272,7 @@ export function Canvas() {
       if (Math.hypot(a.x - wx, a.y - wy) < ATOM_HIT_R * 1.5) return a.id;
     }
     return null;
-  }, []);
+  }, [ATOM_HIT_R]);
 
   const placeRing = useCallback((cx: number, cy: number, n: number, isBenzene = false) => {
     snapshot();
@@ -228,13 +288,11 @@ export function Canvas() {
     }
   }, [snapshot, findAtomAt]);
 
-  // ── Zoom on scroll ───────────────────────────────────────────────────────────
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const { x: sx, y: sy } = svgPt(e);
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
     const newZoom = Math.min(8, Math.max(0.1, zoom * delta));
-    // Keep the world point under cursor fixed
     const newPanX = sx - (sx - panX) * (newZoom / zoom);
     const newPanY = sy - (sy - panY) * (newZoom / zoom);
     setViewport(newZoom, newPanX, newPanY);
@@ -246,10 +304,8 @@ export function Canvas() {
     (e.target as Element).setPointerCapture(e.pointerId);
   };
 
-  // ── Pointer handlers ─────────────────────────────────────────────────────────
   const onCanvasDown = (e: React.PointerEvent) => {
     if (e.button === 1 || e.button === 2 || (e.button === 0 && e.altKey) || activeTool === 'PAN') {
-      // Middle-click / Right-click / alt+click / PAN tool → pan
       startPan(e);
       return;
     }
@@ -259,17 +315,25 @@ export function Canvas() {
     if (activeTool === 'SELECT') {
       if (!hit) {
         setSelBoxS({ ox: x, oy: y, x, y });
-        if (!e.shiftKey) setSelectedAtoms(new Set());
+        if (!e.shiftKey) { setSelectedAtoms(new Set()); setSelectedBonds(new Set()); }
+      }
+      return;
+    }
+    if (activeTool === 'TEXT') {
+      e.preventDefault();
+      editingTextCreatedAt.current = Date.now();
+      if (hit) {
+        const el = store.atoms[hit].element;
+        setEditingText({ id: hit, x: store.atoms[hit].x, y: store.atoms[hit].y, val: el === 'C' ? '' : el });
+      } else {
+        setEditingText({ x, y, val: '' });
       }
       return;
     }
     if (activeTool.startsWith('BOND_')) {
       if (hit) {
-        // Starting from an existing atom
-        const src = hit;
-        setDrawing({ src, x, y });
+        setDrawing({ src: hit, x, y });
       } else {
-        // Starting from empty space - store pending position, create atom on mouse up
         setDrawing({ src: '__pending__', x, y, pendingX: x, pendingY: y });
       }
       return;
@@ -299,6 +363,13 @@ export function Canvas() {
     const { x, y } = getWorld(e);
 
     if (activeTool === 'ERASER') { snapshot(); removeAtom(id); return; }
+    if (activeTool === 'TEXT') {
+      e.preventDefault();
+      editingTextCreatedAt.current = Date.now();
+      const el = store.atoms[id].element;
+      setEditingText({ id, x: store.atoms[id].x, y: store.atoms[id].y, val: el === 'C' ? '' : el });
+      return;
+    }
     if (activeTool.startsWith('ATOM_')) {
       const el = activeTool.split('_').slice(1).join('');
       snapshot(); store.setAtomElement(id, el); return;
@@ -306,7 +377,7 @@ export function Canvas() {
     if (activeTool === 'SELECT') {
       const newSel = new Set(selectedAtoms);
       if (e.shiftKey) { newSel.has(id) ? newSel.delete(id) : newSel.add(id); }
-      else if (!newSel.has(id)) { newSel.clear(); newSel.add(id); }
+      else if (!newSel.has(id)) { newSel.clear(); newSel.add(id); setSelectedBonds(new Set()); }
       setSelectedAtoms(newSel);
       snapshot();
       const dragIds = Array.from(newSel);
@@ -314,7 +385,6 @@ export function Canvas() {
       (e.currentTarget as Element).setPointerCapture(e.pointerId);
       return;
     }
-    // Ring tool on atom → anchor one vertex at this atom
     const ringSizes: Record<string, number> = {
       RING_BENZENE: 6, RING_CYCLOHEXANE: 6, RING_CYCLOPENTANE: 5,
       RING_CYCLOBUTANE: 4, RING_CYCLOPROPANE: 3,
@@ -330,7 +400,6 @@ export function Canvas() {
       const R = BOND_LENGTH / (2 * Math.sin(Math.PI / n));
       const cx = atom.x + Math.cos(angle) * R;
       const cy = atom.y + Math.sin(angle) * R;
-      // Build ring: atom is at angle+π from center
       const startAngle = angle + Math.PI;
       const ids: AtomId[] = [];
       for (let i = 0; i < n; i++) {
@@ -338,7 +407,7 @@ export function Canvas() {
         const vx = cx + R * Math.cos(a);
         const vy = cy + R * Math.sin(a);
         const near = findAtomAt(vx, vy);
-        if (i === 0) ids.push(id); // first vertex IS the clicked atom
+        if (i === 0) ids.push(id);
         else ids.push(near || st.addAtom(vx, vy, 'C'));
       }
       for (let i = 0; i < n; i++) {
@@ -360,6 +429,15 @@ export function Canvas() {
     e.stopPropagation();
     if (activeTool === 'ERASER') { snapshot(); removeBond(bondId); return; }
 
+    if (activeTool === 'SELECT') {
+      const s = new Set(e.shiftKey ? selectedBonds : []);
+      if (s.has(bondId)) s.delete(bondId);
+      else s.add(bondId);
+      if (!e.shiftKey) { setSelectedAtoms(new Set()); }
+      setSelectedBonds(s);
+      return;
+    }
+
     const ringSizes: Record<string, number> = {
       RING_BENZENE: 6, RING_CYCLOHEXANE: 6, RING_CYCLOPENTANE: 5,
       RING_CYCLOBUTANE: 4, RING_CYCLOPROPANE: 3,
@@ -378,7 +456,6 @@ export function Canvas() {
     fuseRingToBond(atomA.id, atomB.id, n, activeTool === 'RING_BENZENE');
   };
 
-  // ── Fuse a ring to bond (atomAId–atomBId as shared edge) ───────────────────
   const fuseRingToBond = (atomAId: AtomId, atomBId: AtomId, n: number, isBenzene: boolean) => {
     const st = useGraphStore.getState();
     const atomA = st.atoms[atomAId], atomB = st.atoms[atomBId];
@@ -386,35 +463,28 @@ export function Canvas() {
 
     const L = Math.hypot(atomB.x - atomA.x, atomB.y - atomA.y) || BOND_LENGTH;
     const mx = (atomA.x + atomB.x) / 2, my = (atomA.y + atomB.y) / 2;
-    const ux = (atomB.x - atomA.x) / L, uy = (atomB.y - atomA.y) / L; // unit along bond
-    const px = -uy, py = ux; // perpendicular
+    const ux = (atomB.x - atomA.x) / L, uy = (atomB.y - atomA.y) / L;
+    const px = -uy, py = ux;
 
-    // Distance from midpoint of AB to ring center for regular n-gon with side L
     const distToCenter = L / (2 * Math.tan(Math.PI / n));
 
-    // Two candidate centers — pick side with fewer atoms
     const c1 = { x: mx + px * distToCenter, y: my + py * distToCenter };
     const c2 = { x: mx - px * distToCenter, y: my - py * distToCenter };
     const atomCount = (c: {x:number;y:number}) =>
       Object.values(st.atoms).filter(a => Math.hypot(a.x - c.x, a.y - c.y) < L * 1.1).length;
     const center = atomCount(c1) <= atomCount(c2) ? c1 : c2;
 
-    // Circumradius
     const R = L / (2 * Math.sin(Math.PI / n));
     const angleA = Math.atan2(atomA.y - center.y, atomA.x - center.x);
 
-    // Which angular step goes from A AWAY from B (the long arc)?
-    // B is adjacent to A: at angleA ± 2π/n. We pick the step that does NOT go to B in 1 step.
-    const stepCW  = -2 * Math.PI / n; // clockwise step
-    const stepCCW =  2 * Math.PI / n; // counter-clockwise step
+    const stepCW  = -2 * Math.PI / n;
+    const stepCCW =  2 * Math.PI / n;
     const bViaCW  = { x: center.x + R * Math.cos(angleA + stepCW),  y: center.y + R * Math.sin(angleA + stepCW) };
     const bViaCCW = { x: center.x + R * Math.cos(angleA + stepCCW), y: center.y + R * Math.sin(angleA + stepCCW) };
     const dCW  = Math.hypot(bViaCW.x  - atomB.x, bViaCW.y  - atomB.y);
     const dCCW = Math.hypot(bViaCCW.x - atomB.x, bViaCCW.y - atomB.y);
-    // If going CW 1 step lands near B, then new atoms go CCW (and vice versa)
     const step = dCW < dCCW ? stepCCW : stepCW;
 
-    // Build atom ids: [A, new_1, ..., new_(n-2), B]
     const ids: AtomId[] = [atomAId];
     for (let i = 1; i < n - 1; i++) {
       const angle = angleA + step * i;
@@ -425,14 +495,43 @@ export function Canvas() {
     }
     ids.push(atomBId);
 
-    // Add bonds along the new arc (the shared A-B bond already exists)
     for (let i = 0; i < ids.length - 1; i++) {
-      const bt: BondType = (isBenzene && i % 2 === 0) ? 'DOUBLE' : 'SINGLE';
+    const bt: BondType = (isBenzene && i % 2 === 0) ? 'DOUBLE' : 'SINGLE';
       st.addBond(ids[i], ids[i + 1], bt);
     }
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
+    const { x, y } = svgToWorld(svgPt(e).x, svgPt(e).y);
+
+    if (scalingRef.current) {
+      const s = scalingRef.current;
+      const currentDist = Math.hypot(x - s.centroid.x, y - s.centroid.y) || 1;
+      const currentAngle = Math.atan2(y - s.centroid.y, x - s.centroid.x);
+      const scale = Math.max(0.1, currentDist / s.initialDist);
+      const rotate = currentAngle - s.initialAngle; // Currently ignoring rotation, just scale
+
+      const nextAtoms: Record<string, {x:number, y:number}> = {};
+      const nextImages: Record<string, {x:number, y:number, width:number, height:number}> = {};
+
+      for (const [id, pos] of Object.entries(s.atomsData)) {
+        nextAtoms[id] = {
+          x: s.centroid.x + (pos.x - s.centroid.x) * scale,
+          y: s.centroid.y + (pos.y - s.centroid.y) * scale
+        };
+      }
+      for (const [id, rect] of Object.entries(s.imagesData)) {
+        nextImages[id] = {
+          x: s.centroid.x + (rect.x - s.centroid.x) * scale,
+          y: s.centroid.y + (rect.y - s.centroid.y) * scale,
+          width: rect.width * scale,
+          height: rect.height * scale
+        };
+      }
+      updateSelectionTransforms(nextAtoms, nextImages);
+      return;
+    }
+
     if (panningRef.current) {
       const dx = e.clientX - panningRef.current.lastX;
       const dy = e.clientY - panningRef.current.lastY;
@@ -441,7 +540,6 @@ export function Canvas() {
       setPanning({ lastX: e.clientX, lastY: e.clientY });
       return;
     }
-    const { x, y } = getWorld(e);
     if (draggingImgRef.current) {
       const d = draggingImgRef.current;
       moveImage(d.id, x - d.lastX, y - d.lastY);
@@ -459,22 +557,25 @@ export function Canvas() {
       setSelBoxS({ ...sb, x, y });
       const minX = Math.min(sb.ox, x), maxX = Math.max(sb.ox, x);
       const minY = Math.min(sb.oy, y), maxY = Math.max(sb.oy, y);
-      const sel = new Set<AtomId>(
+      const selAtoms = new Set<AtomId>(
         Object.values(atoms).filter(a => a.x >= minX && a.x <= maxX && a.y >= minY && a.y <= maxY).map(a => a.id)
       );
-      setSelectedAtoms(sel);
+      const selImgs = new Set<string>(
+        Object.values(images).filter(img => img.x + img.width/2 >= minX && img.x + img.width/2 <= maxX && img.y + img.height/2 >= minY && img.y + img.height/2 <= maxY).map(img => img.id)
+      );
+      setSelectedAtoms(selAtoms);
+      setSelectedImages(selImgs);
       return;
     }
     if (drawingRef.current) {
       const d = drawingRef.current;
       if (d.src === '__pending__') {
-        // Just update the cursor position for the preview line
         setDrawing({ ...d, x, y });
         return;
       }
-      const src = useGraphStore.getState().atoms[d.src];
+      const src = useGraphStore.getState().atoms[d.src as AtomId];
       if (!src) return;
-      const hov = findAtomAt(x, y, d.src);
+      const hov = findAtomAt(x, y, d.src as AtomId);
       if (hov) {
         const a = useGraphStore.getState().atoms[hov];
         setDrawing({ ...d, x: a.x, y: a.y });
@@ -487,6 +588,7 @@ export function Canvas() {
 
   const onPointerUp = (e: React.PointerEvent) => {
     (e.target as Element).releasePointerCapture(e.pointerId);
+    if (scalingRef.current) { setScalingS(null); return; }
     if (draggingRef.current) { setDraggingS(null); return; }
     if (draggingImgRef.current) { setDraggingImgS(null); return; }
     if (selBoxRef.current) { setSelBoxS(null); return; }
@@ -495,19 +597,16 @@ export function Canvas() {
     const d = drawingRef.current;
     if (d) {
       const { x, y } = getWorld(e);
-      
-      // Resolve the source atom (create it now if it was pending)
       let srcId = d.src;
       if (srcId === '__pending__') {
-        const dist = Math.hypot(x - d.pendingX, y - d.pendingY);
-        if (dist < 5) {
-          // Pure click with no drag: place single atom with best-angle bond
+        const dist = Math.hypot(x - d.pendingX!, y - d.pendingY!);
+        if (dist < 15) {
           snapshot();
-          const newSrc = addAtom(d.pendingX, d.pendingY, 'C');
+          const newSrc = addAtom(d.pendingX!, d.pendingY!, 'C');
           const state2 = useGraphStore.getState();
           const angle = getBestAngle(newSrc, state2.atoms, state2.bonds);
-          const ex = d.pendingX + Math.cos(angle) * BOND_LENGTH;
-          const ey = d.pendingY + Math.sin(angle) * BOND_LENGTH;
+          const ex = d.pendingX! + Math.cos(angle) * BOND_LENGTH;
+          const ey = d.pendingY! + Math.sin(angle) * BOND_LENGTH;
           const existingAt = findAtomAt(ex, ey, newSrc);
           const tgt2 = existingAt || addAtom(ex, ey, 'C');
           const bt2: BondType = activeTool === 'BOND_DOUBLE' ? 'DOUBLE' : activeTool === 'BOND_TRIPLE' ? 'TRIPLE' : activeTool === 'BOND_WEDGE' ? 'WEDGE' : activeTool === 'BOND_HASH' ? 'HASH' : 'SINGLE';
@@ -515,21 +614,20 @@ export function Canvas() {
           setDrawing(null);
           return;
         }
-        // Create source atom at original click position
         snapshot();
-        srcId = addAtom(d.pendingX, d.pendingY, 'C');
+        srcId = addAtom(d.pendingX!, d.pendingY!, 'C');
       }
 
-      const src = useGraphStore.getState().atoms[srcId];
+      const src = useGraphStore.getState().atoms[srcId as AtomId];
       if (src) {
-        let tgt = findAtomAt(x, y, srcId);
+        let tgt = findAtomAt(x, y, srcId as AtomId);
         const dist = Math.hypot(d.x - src.x, d.y - src.y);
-        if (!tgt && dist < 5) {
+        if (!tgt && dist < 15) {
           const state = useGraphStore.getState();
-          const angle = getBestAngle(srcId, state.atoms, state.bonds);
+          const angle = getBestAngle(srcId as AtomId, state.atoms, state.bonds);
           const ex = src.x + Math.cos(angle) * BOND_LENGTH;
           const ey = src.y + Math.sin(angle) * BOND_LENGTH;
-          const existingAt = findAtomAt(ex, ey, srcId);
+          const existingAt = findAtomAt(ex, ey, srcId as AtomId);
           tgt = existingAt || addAtom(ex, ey, 'C');
         } else if (!tgt) {
           tgt = addAtom(d.x, d.y, 'C');
@@ -541,36 +639,45 @@ export function Canvas() {
             activeTool === 'BOND_TRIPLE' ? 'TRIPLE' :
             activeTool === 'BOND_WEDGE' ? 'WEDGE' :
             activeTool === 'BOND_HASH' ? 'HASH' : 'SINGLE';
-          addBond(srcId, tgt, bt);
+          addBond(srcId as AtomId, tgt, bt);
         }
       }
       setDrawing(null);
     }
   };
 
-  const onContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-  };
+  const onContextMenu = (e: React.MouseEvent) => e.preventDefault();
 
-  // ── Implicit H helper ───────────────────────────────────────────────────────
   const getImplicitH = useCallback((atomId: AtomId) => {
     const a = atoms[atomId];
-    if (!a || a.element === 'C') return 0; // C shown implicitly
+    if (!a || a.element === 'C') return 0;
     const maxH = IMPLICIT_H[a.element] ?? 0;
     const bonded = Object.values(bonds).filter(b => b.source === atomId || b.target === atomId)
       .reduce((acc, b) => acc + (b.type === 'DOUBLE' ? 2 : b.type === 'TRIPLE' ? 3 : 1), 0);
     return Math.max(0, maxH - bonded);
   }, [atoms, bonds]);
 
-  // ── Bond rendering ──────────────────────────────────────────────────────────
+  const hasValenceError = useCallback((atomId: AtomId) => {
+    const a = atoms[atomId];
+    if (!a) return false;
+    const allowed = MAX_VALENCE[a.element];
+    if (!allowed) return false;
+    
+    const bonded = Object.values(bonds).filter(b => b.source === atomId || b.target === atomId)
+      .reduce((acc, b) => acc + (b.type === 'DOUBLE' ? 2 : b.type === 'TRIPLE' ? 3 : b.type === 'AROMATIC' ? 1.5 : 1), 0);
+      
+    const maxAllowed = Math.max(...allowed);
+    return Math.ceil(bonded) > maxAllowed;
+  }, [atoms, bonds]);
+
   const renderBond = (bond: typeof bonds[string]) => {
     const s = atoms[bond.source], t = atoms[bond.target];
     if (!s || !t) return null;
     const isHov = hoveredBond === bond.id;
-    const color = isHov ? '#c00' : '#1a1a1a';
+    const isSel = selectedBonds.has(bond.id);
+    const color = bond.color || (isHov ? '#c00' : '#1a1a1a');
     const sw = isHov ? BOND_WIDTH + 0.6 : BOND_WIDTH;
 
-    // Clip bond endpoints at atom label boundaries
     const sHC = getImplicitHFor(bond.source, atoms, bonds);
     const tHC = getImplicitHFor(bond.target, atoms, bonds);
     const rS = getAtomRadius(s.element, sHC);
@@ -580,73 +687,155 @@ export function Canvas() {
     const x1 = cs.x, y1 = cs.y, x2 = ct.x, y2 = ct.y;
 
     return (
-      <g key={bond.id}
+      <g key={bond.id} data-bond-id={bond.id}
         onPointerEnter={() => setHoveredBond(bond.id)}
         onPointerLeave={() => setHoveredBond(null)}
         onPointerDown={(e) => onBondDown(e, bond.id)}
       >
-        {/* Wide hit area (full length) */}
-        <line x1={s.x} y1={s.y} x2={t.x} y2={t.y} stroke="transparent" strokeWidth="14" style={{ cursor: 'pointer' }} />
-
+        {isSel && (
+          <line className="ui-element" x1={s.x} y1={s.y} x2={t.x} y2={t.y} stroke="#bfdbfe" strokeWidth={BOND_WIDTH + 8} strokeLinecap="round" pointerEvents="none" />
+        )}
+        <line className="ui-element" x1={s.x} y1={s.y} x2={t.x} y2={t.y} stroke="transparent" strokeWidth="14" style={{ cursor: 'pointer' }} />
         {bond.type === 'WEDGE' && <WedgeBond x1={x1} y1={y1} x2={x2} y2={y2} color={color} />}
         {bond.type === 'HASH' && <HashBond x1={x1} y1={y1} x2={x2} y2={y2} color={color} />}
-
-        {(bond.type === 'SINGLE' || bond.type === 'DOUBLE' || bond.type === 'TRIPLE') && (
+        {(bond.type === 'SINGLE' || bond.type === 'TRIPLE') && (
           <line x1={x1} y1={y1} x2={x2} y2={y2}
             stroke={color} strokeWidth={sw} strokeLinecap="round" pointerEvents="none" />
         )}
         {bond.type === 'DOUBLE' && (() => {
-          const p = parallelLine(x1, y1, x2, y2, DBL_OFFSET);
-          return <line x1={p.x1} y1={p.y1} x2={p.x2} y2={p.y2}
-            stroke={color} strokeWidth={sw} strokeLinecap="round" pointerEvents="none" />;
+          let ringPath: string[] | null = null;
+          const queue: {id: string, path: string[]}[] = [{ id: bond.source, path: [bond.source] }];
+          const visited = new Set<string>([bond.source]);
+          while (queue.length > 0) {
+            const curr = queue.shift()!;
+            if (curr.id === bond.target && curr.path.length > 2) {
+              ringPath = curr.path;
+              break;
+            }
+            if (curr.path.length > 8) continue;
+            Object.values(bonds).forEach(b => {
+              if (b.id !== bond.id) {
+                const nextId = b.source === curr.id ? b.target : (b.target === curr.id ? b.source : null);
+                if (nextId && !visited.has(nextId)) {
+                  visited.add(nextId);
+                  queue.push({ id: nextId, path: [...curr.path, nextId] });
+                }
+              }
+            });
+            if (ringPath) break;
+          }
+
+          let offsetDir = 1;
+          let isCentered = false;
+
+          let degA = 0, degB = 0;
+          Object.values(bonds).forEach(b => {
+            if (b.source === bond.source || b.target === bond.source) degA++;
+            if (b.source === bond.target || b.target === bond.target) degB++;
+          });
+
+          if (degA === 1 || degB === 1) {
+            isCentered = true;
+          } else if (ringPath) {
+            let cx = 0, cy = 0;
+            ringPath.forEach(id => { cx += atoms[id].x; cy += atoms[id].y; });
+            cx /= ringPath.length; cy /= ringPath.length;
+            const dx = x2 - x1, dy = y2 - y1;
+            const nx = -dy, ny = dx;
+            const dot = (cx - x1) * nx + (cy - y1) * ny;
+            offsetDir = dot > 0 ? 1 : -1;
+          } else {
+            let cx = 0, cy = 0, count = 0;
+            Object.values(bonds).forEach(b => {
+              if (b.id !== bond.id) {
+                if (b.source === bond.source || b.target === bond.source) {
+                  const adj = b.source === bond.source ? b.target : b.source;
+                  cx += atoms[adj].x; cy += atoms[adj].y; count++;
+                }
+                if (b.source === bond.target || b.target === bond.target) {
+                  const adj = b.source === bond.target ? b.target : b.source;
+                  cx += atoms[adj].x; cy += atoms[adj].y; count++;
+                }
+              }
+            });
+            if (count > 0) {
+              cx /= count; cy /= count;
+              const dx = x2 - x1, dy = y2 - y1;
+              const nx = -dy, ny = dx;
+              const dot = (cx - x1) * nx + (cy - y1) * ny;
+              if (Math.abs(dot) < 5) isCentered = true;
+              else offsetDir = dot > 0 ? 1 : -1;
+            } else {
+              isCentered = true;
+            }
+          }
+
+          if (isCentered) {
+            const p1 = parallelLine(x1, y1, x2, y2, DBL_OFFSET / 2, 0);
+            const p2 = parallelLine(x1, y1, x2, y2, -DBL_OFFSET / 2, 0);
+            return (
+              <>
+                <line x1={p1.x1} y1={p1.y1} x2={p1.x2} y2={p1.y2} stroke={color} strokeWidth={sw} strokeLinecap="round" pointerEvents="none" />
+                <line x1={p2.x1} y1={p2.y1} x2={p2.x2} y2={p2.y2} stroke={color} strokeWidth={sw} strokeLinecap="round" pointerEvents="none" />
+              </>
+            );
+          } else {
+            // Trim by 11% at each end to perfectly fit a 120-degree internal ring angle
+            const p = parallelLine(x1, y1, x2, y2, DBL_OFFSET * offsetDir, 0.11);
+            return (
+              <>
+                <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth={sw} strokeLinecap="round" pointerEvents="none" />
+                <line x1={p.x1} y1={p.y1} x2={p.x2} y2={p.y2} stroke={color} strokeWidth={sw} strokeLinecap="round" pointerEvents="none" />
+              </>
+            );
+          }
         })()}
         {bond.type === 'TRIPLE' && (() => {
           const p1 = parallelLine(x1, y1, x2, y2, DBL_OFFSET + 1.5);
           const p2 = parallelLine(x1, y1, x2, y2, -(DBL_OFFSET + 1.5));
           return <>
             <line x1={p1.x1} y1={p1.y1} x2={p1.x2} y2={p1.y2} stroke={color} strokeWidth={sw} strokeLinecap="round" pointerEvents="none" />
-            <line x1={p2.x1} y2={p2.y1} x2={p2.x2} y2={p2.y2} stroke={color} strokeWidth={sw} strokeLinecap="round" pointerEvents="none" />
+            <line x1={p2.x1} y1={p2.y1} x2={p2.x2} y2={p2.y2} stroke={color} strokeWidth={sw} strokeLinecap="round" pointerEvents="none" />
           </>;
         })()}
       </g>
     );
   };
 
-  // ── Atom rendering ──────────────────────────────────────────────────────────
   const renderAtom = (atom: typeof atoms[string]) => {
     const isHov = hoveredAtom === atom.id;
     const isSel = selectedAtoms.has(atom.id);
-    const showLabel = atom.element !== 'C';
-    const color = ELEMENT_COLORS[atom.element] ?? '#1a1a1a';
+    const isError = hasValenceError(atom.id);
+    const showLabel = atom.element !== 'C' || isError;
+    const color = isError ? '#ef4444' : (atom.color || (ELEMENT_COLORS[atom.element] ?? '#1a1a1a'));
     const hCount = getImplicitH(atom.id);
 
     return (
-      <g key={atom.id}
-        transform={`translate(${atom.x},${atom.y})`}
+      <g key={atom.id} data-atom-id={atom.id}
+        transform={`translate(${atom.x}, ${atom.y})`}
         onPointerEnter={() => setHoveredAtom(atom.id)}
         onPointerLeave={() => setHoveredAtom(null)}
         onPointerDown={(e) => onAtomDown(e, atom.id)}
         style={{ cursor: activeTool === 'PAN' ? 'grab' : activeTool === 'SELECT' ? 'grab' : activeTool === 'ERASER' ? 'pointer' : 'crosshair' }}
       >
-        {/* Permanent hit area */}
-        <circle r={ATOM_HIT_R} fill="transparent" />
-
-        {/* Selection / Hover ring */}
+        <circle className="ui-element" r={ATOM_HIT_R} fill="transparent" />
         {isSel && !isHov && (
-          <circle r={ATOM_HIT_R} fill="rgba(74, 144, 226, 0.2)" stroke="#4a90e2" strokeWidth={1} />
+          <circle className="ui-element" r={ATOM_HIT_R} fill="rgba(74, 144, 226, 0.2)" stroke="#4a90e2" strokeWidth={1} />
         )}
         {isHov && (
-          <circle r={ATOM_HIT_R + 4} fill="rgba(245, 158, 11, 0.35)" stroke="#f59e0b" strokeWidth={2} />
+          <circle className="ui-element" r={ATOM_HIT_R + 4} fill="rgba(245, 158, 11, 0.35)" stroke="#f59e0b" strokeWidth={2} />
         )}
-
+        {isError && (
+          <circle className="ui-element" r={FONT_SIZE * 0.9} fill="rgba(239, 68, 68, 0.15)" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="4 2" />
+        )}
         {showLabel && (
           <>
-            <circle r={10} fill="white" />
+            <circle r={FONT_SIZE * 0.7} fill="white" />
             <text
               textAnchor="middle" dominantBaseline="central"
-              fontSize={FONT_SIZE} fontWeight="700"
+              fontSize={FONT_SIZE} fontWeight={getStyle().FONT_WEIGHT as any}
               fill={color}
-              fontFamily="Arial, Helvetica, sans-serif"
+              fontFamily={FONT_FAMILY}
               pointerEvents="none" letterSpacing="-0.3"
             >
               {atom.element}{hCount > 0 ? `H${hCount > 1 ? hCount : ''}` : ''}
@@ -660,6 +849,7 @@ export function Canvas() {
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <svg
+        id="molkanvas-svg"
         ref={svgRef} width="100%" height="100%"
         onPointerDown={onCanvasDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
         onPointerLeave={onPointerUp} onWheel={onWheel} onContextMenu={onContextMenu}
@@ -669,7 +859,7 @@ export function Canvas() {
           {/* Images in background */}
           {Object.values(images).map(img => (
             <image
-              key={img.id}
+              key={img.id} data-image-id={img.id}
               href={img.src}
               x={img.x}
               y={img.y}
@@ -682,6 +872,10 @@ export function Canvas() {
                 e.stopPropagation();
                 if (activeTool === 'ERASER') { snapshot(); removeImage(img.id); return; }
                 if (activeTool === 'SELECT') {
+                  const newSelImg = new Set(selectedImages);
+                  if (e.shiftKey) { newSelImg.has(img.id) ? newSelImg.delete(img.id) : newSelImg.add(img.id); }
+                  else if (!newSelImg.has(img.id)) { newSelImg.clear(); newSelImg.add(img.id); setSelectedAtoms(new Set()); setSelectedBonds(new Set()); }
+                  setSelectedImages(newSelImg);
                   const { x, y } = getWorld(e);
                   snapshot();
                   setDraggingImgS({ id: img.id, lastX: x, lastY: y });
@@ -697,7 +891,7 @@ export function Canvas() {
 
           {/* Ghost bond */}
           {drawing && drawing.src !== '__pending__' && atoms[drawing.src] && (
-            <line
+            <line className="ui-element"
               x1={atoms[drawing.src].x} y1={atoms[drawing.src].y}
               x2={drawing.x} y2={drawing.y}
               stroke="#4a90d9" strokeWidth="1.5" strokeDasharray="5 3"
@@ -705,7 +899,7 @@ export function Canvas() {
             />
           )}
           {drawing && drawing.src === '__pending__' && (
-            <line
+            <line className="ui-element"
               x1={drawing.pendingX} y1={drawing.pendingY}
               x2={drawing.x} y2={drawing.y}
               stroke="#4a90d9" strokeWidth="1.5" strokeDasharray="5 3"
@@ -715,12 +909,63 @@ export function Canvas() {
 
           {/* Selection box */}
           {selBox && (
-            <rect
+            <rect className="ui-element"
               x={Math.min(selBox.ox, selBox.x)} y={Math.min(selBox.oy, selBox.y)}
               width={Math.abs(selBox.x - selBox.ox)} height={Math.abs(selBox.y - selBox.oy)}
               fill="rgba(74,144,217,0.08)" stroke="#4a90d9" strokeWidth={1 / zoom} strokeDasharray={`${4/zoom} ${2/zoom}`}
             />
           )}
+
+          {/* Persistent Bounding Box & Resize Handles for current selection */}
+          {(() => {
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            let hasSel = false;
+            
+            selectedAtoms.forEach(id => {
+              const a = atoms[id];
+              if (a) {
+                minX = Math.min(minX, a.x); minY = Math.min(minY, a.y);
+                maxX = Math.max(maxX, a.x); maxY = Math.max(maxY, a.y);
+                hasSel = true;
+              }
+            });
+            selectedImages.forEach(id => {
+              const img = images[id];
+              if (img) {
+                minX = Math.min(minX, img.x); minY = Math.min(minY, img.y);
+                maxX = Math.max(maxX, img.x + img.width); maxY = Math.max(maxY, img.y + img.height);
+                hasSel = true;
+              }
+            });
+
+            if (hasSel && !selBox) {
+              minX -= 20; minY -= 20; maxX += 20; maxY += 20;
+              const w = maxX - minX, h = maxY - minY;
+              const hr = 6 / zoom; // handle radius
+              return (
+                <g className="ui-element">
+                  <rect x={minX} y={minY} width={w} height={h} fill="none" stroke="#4a90d9" strokeWidth={1 / zoom} strokeDasharray={`${4/zoom} ${4/zoom}`} pointerEvents="none" />
+                  <circle cx={maxX} cy={maxY} r={hr} fill="white" stroke="#4a90d9" strokeWidth={1.5 / zoom} style={{ cursor: 'se-resize' }}
+                    onPointerDown={(ev) => {
+                      ev.stopPropagation();
+                      snapshot();
+                      const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+                      const { x, y } = getWorld(ev);
+                      const initialDist = Math.hypot(x - cx, y - cy) || 1;
+                      const initialAngle = Math.atan2(y - cy, x - cx);
+                      const atomsData: Record<string, {x:number, y:number}> = {};
+                      const imagesData: Record<string, {x:number, y:number, width:number, height:number}> = {};
+                      selectedAtoms.forEach(id => { if (atoms[id]) atomsData[id] = {x: atoms[id].x, y: atoms[id].y}; });
+                      selectedImages.forEach(id => { if (images[id]) imagesData[id] = {x: images[id].x, y: images[id].y, width: images[id].width, height: images[id].height}; });
+                      setScalingS({ initialDist, initialAngle, centroid: {x: cx, y: cy}, atomsData, imagesData });
+                      (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
+                    }}
+                  />
+                </g>
+              );
+            }
+            return null;
+          })()}
 
           {Object.values(atoms).map(renderAtom)}
 
@@ -729,19 +974,76 @@ export function Canvas() {
             <text
               key={lbl.id}
               x={lbl.x} y={lbl.y}
-              fontSize="12"
+              fontSize={FONT_SIZE}
+              fontFamily={FONT_FAMILY}
+              fontWeight={getStyle().FONT_WEIGHT as any}
               fill="#e11d48"
-              fontFamily="sans-serif"
-              fontWeight="bold"
-              style={{ pointerEvents: 'none', userSelect: 'none' }}
-              dominantBaseline="middle"
+              pointerEvents="none"
               textAnchor="middle"
+              dominantBaseline="middle"
             >
               {lbl.text}
             </text>
           ))}
         </g>
       </svg>
+
+      {editingText && (
+        <div style={{
+          position: 'absolute',
+          left: editingText.x * zoom + panX - 50,
+          top: editingText.y * zoom + panY - 15,
+          width: 100,
+          height: 30,
+          zIndex: 100
+        }}>
+          <input
+            autoFocus
+            type="text"
+            value={editingText.val}
+            onChange={e => setEditingText({ ...editingText, val: e.target.value })}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                const val = editingText.val.trim();
+                if (val) {
+                  snapshot();
+                  if (editingText.id) store.setAtomElement(editingText.id, val);
+                  else addAtom(editingText.x, editingText.y, val);
+                }
+                setEditingText(null);
+                setActiveTool('SELECT');
+              }
+              if (e.key === 'Escape') setEditingText(null);
+            }}
+            onBlur={(e) => {
+              if (Date.now() - editingTextCreatedAt.current < 200) {
+                // Ignore immediate blur caused by browser focus stealing on mouseup
+                setTimeout(() => e.target.focus(), 10);
+                return;
+              }
+              const val = editingText.val.trim();
+              if (val) {
+                snapshot();
+                if (editingText.id) store.setAtomElement(editingText.id, val);
+                else addAtom(editingText.x, editingText.y, val);
+              }
+              setEditingText(null);
+            }}
+            style={{
+              width: '100%',
+              height: '100%',
+              textAlign: 'center',
+              border: '1.5px solid #2563eb',
+              outline: 'none',
+              borderRadius: 4,
+              fontSize: '14px',
+              fontFamily: 'sans-serif',
+              background: 'white',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

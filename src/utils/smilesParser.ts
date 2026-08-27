@@ -1,7 +1,9 @@
 // @ts-ignore
 import { Molecule } from 'openchemlib';
+
 import { useGraphStore } from '../store/graphStore';
-import { BOND_LENGTH } from '../components/Canvas';
+
+const BOND_LENGTH = 30; // Standard bond length
 
 export function parseSmilesToStore(smiles: string) {
   try {

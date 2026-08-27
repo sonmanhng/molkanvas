@@ -1,0 +1,41 @@
+--- src/components/Canvas.tsx
++++ src/components/Canvas.tsx
+@@ -7,14 +7,16 @@
+   const style = useGraphStore.getState().documentStyle;
+   if (style === 'ACS_1996') {
++    // Scale factor 2.5 to map physical pt to readable CSS pixels while keeping EXACT ACS 1996 proportions
++    const S = 2.5;
+     return {
+-      // Exact physical mapping at 96 DPI (1 pt = 1.333 px)
+-      BOND_LENGTH: 19.2,   // 14.4 pt
+-      ATOM_HIT_R: 8,
+-      DBL_OFFSET: 3.456,   // 18% of 19.2
+-      FONT_SIZE: 13.33,    // 10 pt
++      BOND_LENGTH: 14.4 * S,
++      ATOM_HIT_R: 12,
++      DBL_OFFSET: 14.4 * S * 0.18, // 18% of length
++      FONT_SIZE: 10 * S,
+       FONT_WEIGHT: 'normal',
+-      BOND_WIDTH: 0.8,     // 0.6 pt
+-      BOLD_WIDTH: 2.67,    // 2.0 pt
+-      HASH_SPACING: 3.33,  // 2.5 pt
++      BOND_WIDTH: 0.6 * S,
++      BOLD_WIDTH: 2.0 * S,
++      HASH_SPACING: 2.5 * S,
+       FONT_FAMILY: 'Arial, Helvetica, sans-serif'
+     };
+   }
+@@ -40,9 +42,9 @@
+ function getAtomRadius(element: string, hCount: number): number {
+   if (element === 'C') return 0; // C is invisible, bond goes to center
+   const chars = element.length + (hCount > 0 ? 1 + (hCount > 1 ? 1 : 0) : 0);
+-  const { FONT_SIZE } = getStyle();
+-  // Exact margin calc based on 1.6pt margin for 10pt font
+-  return chars * (FONT_SIZE * 0.28) + (FONT_SIZE * 0.16); 
++  const { FONT_SIZE } = getStyle();
++  const S = 2.5;
++  // Exact margin calc based on 1.6pt margin scaled
++  return chars * (FONT_SIZE * 0.28) + (1.6 * S); 
+ }
+ 
+ // Clip a bond endpoint to stop at atom boundary

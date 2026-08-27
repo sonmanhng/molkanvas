@@ -141,8 +141,10 @@ const TOOL_GROUPS: ToolGroup[] = [
 
 
 export function Toolbar() {
-  const { activeTool, setActiveTool, clear } = useGraphStore();
+  const store = useGraphStore();
+  const { activeTool, setActiveTool, clear, setSelectionColor } = store;
   const [showPT, setShowPT] = React.useState(false);
+  const [showColor, setShowColor] = React.useState(false);
 
   return (
     <>
@@ -173,6 +175,30 @@ export function Toolbar() {
             </div>
           </React.Fragment>
         ))}
+        <div className="tool-panel__sep" />
+        
+        <div style={{ position: 'relative' }}>
+          <button 
+             className="tool-btn" 
+             title="Set Color (for selected atoms/bonds)" 
+             onClick={() => setShowColor(!showColor)}
+             style={{ color: '#10b981' }}
+          >
+            <SvgIcon>
+              <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
+            </SvgIcon>
+          </button>
+          {showColor && (
+            <div style={{ position: 'fixed', bottom: '20px', left: '60px', background: '#fff', border: '1px solid #ccc', borderRadius: 4, padding: 8, display: 'flex', gap: 4, zIndex: 9999, flexWrap: 'wrap', width: 80, boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+              {['#1a1a1a', '#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4'].map(c => (
+                <button key={c} style={{ width: 20, height: 20, background: c, border: 'none', borderRadius: 2, cursor: 'pointer' }} 
+                  onClick={() => { setSelectionColor(c); setShowColor(false); }} 
+                />
+              ))}
+            </div>
+          )}
+        </div>
+        
         <div className="tool-panel__sep" />
 
         <button className="tool-btn" onClick={clear} title="Clear All" style={{ color: '#ef4444' }}>

@@ -45,6 +45,10 @@ export function SpectraViewer({ data1H, onClose, getMolPayload }: SpectraViewerP
       const payload = getMolPayload();
       let result: any;
       if (mode === '13C' || mode === 'IR') {
+        if (!(window as any).electronAPI) {
+          alert('Lỗi: Bạn đang mở ứng dụng trong trình duyệt web thông thường (Chrome/Edge). Vui lòng chạy qua ứng dụng Electron để sử dụng tính năng này.');
+          return;
+        }
         result = await (window as any).electronAPI.predictIr(payload, mode);
       }
       setTabData(prev => ({ ...prev, [mode]: result }));
@@ -160,7 +164,7 @@ export function SpectraViewer({ data1H, onClose, getMolPayload }: SpectraViewerP
       }}>
         {/* Tabs */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <span style={{ fontSize: '11px', color: '#94a3b8', marginRight: '8px' }}>⚗️ Spectra</span>
+          <span style={{ fontSize: '11px', color: '#94a3b8', marginRight: '8px' }}>Spectra</span>
           {TAB_CONFIG.map(t => (
             <button
               key={t.mode}

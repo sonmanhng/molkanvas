@@ -9,6 +9,7 @@ export interface Atom {
   y: number;
   element: string;
   charge?: number;  // -3..+3
+  color?: string;
 }
 
 export type BondType = 'SINGLE' | 'DOUBLE' | 'TRIPLE' | 'WEDGE' | 'HASH';
@@ -18,6 +19,7 @@ export interface Bond {
   source: AtomId;
   target: AtomId;
   type: BondType;
+  color?: string;
 }
 
 export type ImageId = string;
@@ -54,6 +56,8 @@ interface GraphState extends MolGraph {
   // UI / tool
   activeTool: ToolType;
   setActiveTool: (tool: ToolType) => void;
+  documentStyle: 'DEFAULT' | 'ACS_1996';
+  setDocumentStyle: (style: 'DEFAULT' | 'ACS_1996') => void;
 
   // Hover
   hoveredAtom: AtomId | null;
@@ -64,6 +68,12 @@ interface GraphState extends MolGraph {
   // Selection
   selectedAtoms: Set<AtomId>;
   setSelectedAtoms: (ids: Set<AtomId>) => void;
+  selectedBonds: Set<BondId>;
+  setSelectedBonds: (ids: Set<BondId>) => void;
+  selectedImages: Set<ImageId>;
+  setSelectedImages: (ids: Set<ImageId>) => void;
+
+  setSelectionColor: (color: string) => void;
 
   // Viewport (zoom/pan)
   zoom: number;
@@ -84,6 +94,10 @@ interface GraphState extends MolGraph {
   addBond: (source: AtomId, target: AtomId, type?: BondType) => BondId;
   moveAtom: (id: AtomId, x: number, y: number) => void;
   moveAtoms: (ids: AtomId[], dx: number, dy: number) => void;
+  updateSelectionTransforms: (
+    atomsData: Record<AtomId, {x: number, y: number}>,
+    imagesData: Record<ImageId, {x: number, y: number, width: number, height: number}>
+  ) => void;
   setAtomElement: (id: AtomId, element: string) => void;
   setBondType: (id: BondId, type: BondType) => void;
   removeAtom: (id: AtomId) => void;
@@ -102,7 +116,9 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   stereoLabels: [],
 
   activeTool: 'BOND_SINGLE',
-  setActiveTool: (tool) => set({ activeTool: tool }),
+  setActiveTool: (t) => set({ activeTool: t }),
+  documentStyle: 'DEFAULT',
+  setDocumentStyle: (style) => set({ documentStyle: style }),
 
   hoveredAtom: null,
   setHoveredAtom: (id) => set({ hoveredAtom: id }),
@@ -111,6 +127,25 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 
   selectedAtoms: new Set(),
   setSelectedAtoms: (ids) => set({ selectedAtoms: ids }),
+  selectedBonds: new Set(),
+  setSelectedBonds: (ids) => set({ selectedBonds: ids }),
+  selectedImages: new Set(),
+  setSelectedImages: (ids) => set({ selectedImages: ids }),
+
+  setSelectionColor: (color: string) => {
+    get().snapshot();
+    set((state) => {
+      const newAtoms = { ...state.atoms };
+      const newBonds = { ...state.bonds };
+      state.selectedAtoms.forEach(id => {
+        if (newAtoms[id]) newAtoms[id] = { ...newAtoms[id], color };
+      });
+      state.selectedBonds.forEach(id => {
+        if (newBonds[id]) newBonds[id] = { ...newBonds[id], color };
+      });
+      return { atoms: newAtoms, bonds: newBonds };
+    });
+  },
 
   zoom: 1,
   panX: 0,
@@ -122,7 +157,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 
   snapshot: () => {
     set((state) => {
-      const g = { atoms: state.atoms, bonds: state.bonds, images: state.images };
+      const g = { atoms: state.atoms, bonds: state.bonds, images: state.images, stereoLabels: state.stereoLabels };
       return {
         past: [...state.past.slice(-HISTORY_LIMIT), g],
         future: []
@@ -132,29 +167,31 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 
   undo: () => {
     const state = get();
-    const { past, atoms, bonds, images } = state;
+    const { past, atoms, bonds, images, stereoLabels } = state;
     if (past.length === 0) return;
     const prev = past[past.length - 1];
     set({
       past: past.slice(0, -1),
-      future: [{ atoms, bonds, images }, ...state.future],
+      future: [{ atoms, bonds, images, stereoLabels }, ...state.future],
       atoms: prev.atoms,
       bonds: prev.bonds,
-      images: prev.images || {}
+      images: prev.images || {},
+      stereoLabels: prev.stereoLabels || []
     });
   },
 
   redo: () => {
     const state = get();
-    const { past, future, atoms, bonds, images } = state;
+    const { past, future, atoms, bonds, images, stereoLabels } = state;
     if (future.length === 0) return;
     const next = future[0];
     set({
-      past: [...past, { atoms, bonds, images }],
+      past: [...past, { atoms, bonds, images, stereoLabels }],
       future: future.slice(1),
       atoms: next.atoms,
       bonds: next.bonds,
-      images: next.images || {}
+      images: next.images || {},
+      stereoLabels: next.stereoLabels || []
     });
   },
 
@@ -191,14 +228,33 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     stereoLabels: [],
   })),
 
-  moveAtoms: (ids, dx, dy) => set(state => {
-    const newAtoms = { ...state.atoms };
+  moveAtoms: (ids, dx, dy) => set((state) => {
+    const next = { ...state.atoms };
     ids.forEach(id => {
-      if (newAtoms[id]) {
-        newAtoms[id] = { ...newAtoms[id], x: newAtoms[id].x + dx, y: newAtoms[id].y + dy };
+      if (next[id]) {
+        next[id] = { ...next[id], x: next[id].x + dx, y: next[id].y + dy };
       }
     });
-    return { atoms: newAtoms, stereoLabels: [] };
+    return { atoms: next, stereoLabels: [] };
+  }),
+
+  updateSelectionTransforms: (atomsData, imagesData) => set((state) => {
+    const nextAtoms = { ...state.atoms };
+    const nextImages = { ...state.images };
+    
+    for (const [id, pos] of Object.entries(atomsData)) {
+      if (nextAtoms[id]) {
+        nextAtoms[id] = { ...nextAtoms[id], x: pos.x, y: pos.y };
+      }
+    }
+    
+    for (const [id, rect] of Object.entries(imagesData)) {
+      if (nextImages[id]) {
+        nextImages[id] = { ...nextImages[id], ...rect };
+      }
+    }
+    
+    return { atoms: nextAtoms, images: nextImages, stereoLabels: [] };
   }),
 
   setAtomElement: (id, element) => set(state => ({
@@ -225,21 +281,26 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   }),
 
   removeBond: (id) => set(state => {
-    const { [id]: removedBond, ...newBonds } = state.bonds;
-    return { bonds: newBonds, stereoLabels: [] };
+    const newBonds = { ...state.bonds };
+    delete newBonds[id];
+    const sBonds = new Set(state.selectedBonds);
+    sBonds.delete(id);
+    return { bonds: newBonds, selectedBonds: sBonds };
   }),
 
   addImage: (src, x, y, width, height) => {
-    const id = 'img_' + generateId();
+    const id = `img_${generateId()}`;
     set((state) => ({ images: { ...state.images, [id]: { id, src, x, y, width, height } } }));
     return id;
   },
 
   removeImage: (id) => {
     set((state) => {
-      const next = { ...state.images };
-      delete next[id];
-      return { images: next };
+      const newImages = { ...state.images };
+      delete newImages[id];
+      const sImgs = new Set(state.selectedImages);
+      sImgs.delete(id);
+      return { images: newImages, selectedImages: sImgs };
     });
   },
 
@@ -258,6 +319,11 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 
   clear: () => {
     get().snapshot();
-    set({ atoms: {}, bonds: {}, images: {}, selectedAtoms: new Set(), hoveredAtom: null, hoveredBond: null });
-  },
+    set({
+      atoms: {}, bonds: {}, images: {},
+      stereoLabels: [],
+      selectedAtoms: new Set(), selectedBonds: new Set(), selectedImages: new Set(),
+      hoveredAtom: null, hoveredBond: null
+    });
+  }
 }));

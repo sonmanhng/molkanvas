@@ -8,6 +8,7 @@ import { TEMPLATES } from './components/TemplateSidebar';
 import { SHAPE_TEMPLATES } from './components/ShapeLibrary';
 import { ChemblResult } from './components/ChemblResult';
 import { SpectraViewer } from './components/SpectraViewer';
+import { ConformerViewer } from './components/ConformerViewer';
 import { useGraphStore } from './store/graphStore';
 import './index.css';
 
@@ -78,10 +79,15 @@ function App() {
   const handleNew = () => useGraphStore.getState().clear();
   
   const [saveMenuOpen, setSaveMenuOpen] = React.useState(false);
+  const [copyMenuOpen, setCopyMenuOpen] = React.useState(false);
   const [templateMenuOpen, setTemplateMenuOpen] = React.useState(false);
   const [shapeMenuOpen, setShapeMenuOpen] = React.useState(false);
   const [show3D, setShow3D] = React.useState(false);
   const [sdfData, setSdfData] = React.useState<string | null>(null);
+  
+  const [showConformer, setShowConformer] = React.useState(false);
+  const [conformerData, setConformerData] = React.useState<any[] | null>(null);
+  const [isAnalyzingConformer, setIsAnalyzingConformer] = React.useState(false);
   
   const [showChembl, setShowChembl] = React.useState(false);
   const [chemblData, setChemblData] = React.useState<any>(null);
@@ -90,6 +96,8 @@ function App() {
   const [showNmr, setShowNmr] = React.useState(false);
   const [nmrData, setNmrData] = React.useState<any>(null);
   const [nmrFetching, setNmrFetching] = React.useState(false);
+
+  const [docStyleMenuOpen, setDocStyleMenuOpen] = React.useState(false);
 
   const handleOpen = async () => {
     try {
@@ -159,6 +167,117 @@ function App() {
     }
   };
 
+  const handleExportHighRes = async () => {
+    setSaveMenuOpen(false);
+    try {
+      const state = useGraphStore.getState();
+      const allAtoms = Object.values(state.atoms);
+      const allImages = Object.values(state.images);
+      if (allAtoms.length === 0 && allImages.length === 0) {
+        alert("Bản vẽ trống!");
+        return;
+      }
+
+      const hasSelection = state.selectedAtoms.size > 0 || state.selectedImages.size > 0;
+      const atoms = hasSelection 
+        ? allAtoms.filter(a => state.selectedAtoms.has(a.id))
+        : allAtoms;
+      const images = hasSelection
+        ? allImages.filter(img => state.selectedImages.has(img.id))
+        : allImages;
+
+      if (atoms.length === 0 && images.length === 0) {
+        alert("Bạn chưa chọn đối tượng nào (hoặc bản vẽ trống)!");
+        return;
+      }
+      
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      atoms.forEach(a => {
+        minX = Math.min(minX, a.x); minY = Math.min(minY, a.y);
+        maxX = Math.max(maxX, a.x); maxY = Math.max(maxY, a.y);
+      });
+      images.forEach(img => {
+        minX = Math.min(minX, img.x); minY = Math.min(minY, img.y);
+        maxX = Math.max(maxX, img.x + img.width); maxY = Math.max(maxY, img.y + img.height);
+      });
+      
+      const PADDING = 40;
+      minX -= PADDING; minY -= PADDING; maxX += PADDING; maxY += PADDING;
+      
+      const width = maxX - minX;
+      const height = maxY - minY;
+
+      const svgNode = document.getElementById('molkanvas-svg');
+      if (!svgNode) {
+        alert('Không tìm thấy SVG để xuất!');
+        return;
+      }
+      
+      const clone = svgNode.cloneNode(true) as SVGSVGElement;
+      
+      // Xoá các UI elements
+      const uiElements = clone.querySelectorAll('.ui-element');
+      uiElements.forEach(el => el.remove());
+
+      // Xoá các element không được chọn
+      if (hasSelection) {
+        clone.querySelectorAll('[data-atom-id]').forEach(el => {
+          if (!state.selectedAtoms.has(el.getAttribute('data-atom-id')!)) el.remove();
+        });
+        clone.querySelectorAll('[data-image-id]').forEach(el => {
+          if (!state.selectedImages.has(el.getAttribute('data-image-id')!)) el.remove();
+        });
+        // Đối với liên kết, chỉ xuất các liên kết mà cả 2 đầu nguyên tử đều được chọn
+        clone.querySelectorAll('[data-bond-id]').forEach(el => {
+          const bondId = el.getAttribute('data-bond-id')!;
+          const bond = state.bonds[bondId];
+          if (!bond || !state.selectedAtoms.has(bond.source) || !state.selectedAtoms.has(bond.target)) {
+            el.remove();
+          }
+        });
+      }
+      
+      clone.setAttribute('viewBox', `${minX} ${minY} ${width} ${height}`);
+      clone.setAttribute('width', `${width}`);
+      clone.setAttribute('height', `${height}`);
+      clone.style.background = 'transparent';
+      
+      const serializer = new XMLSerializer();
+      const svgString = serializer.serializeToString(clone);
+      const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+      
+      const img = new Image();
+      img.onload = async () => {
+        const SCALE = 12.5; // 1200 DPI
+        const canvas = document.createElement('canvas');
+        canvas.width = width * SCALE;
+        canvas.height = height * SCALE;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        
+        const dataUrl = canvas.toDataURL('image/png', 1.0);
+        
+        await (window as any).electronAPI.saveFile(dataUrl, {
+          title: 'Export High-Res PNG (1200 DPI)',
+          defaultPath: 'structure_1200dpi.png',
+          filters: [{ name: 'PNG Image', extensions: ['png'] }]
+        });
+      };
+      img.onerror = () => {
+        alert('Có lỗi khi vẽ SVG sang Canvas.');
+      };
+      img.src = url;
+    } catch (err) {
+      alert('Lỗi xuất ảnh: ' + err);
+    }
+  };
+
   const handleGenerate3D = async () => {
     try {
       const state = useGraphStore.getState();
@@ -185,6 +304,48 @@ function App() {
       setShow3D(true);
     } catch (err: any) {
       alert('3D Generation failed: ' + err);
+    }
+  };
+
+  const handleAnalyzeConformers = async () => {
+    try {
+      const state = useGraphStore.getState();
+      
+      let targetAtoms = Object.values(state.atoms);
+      let targetBonds = Object.values(state.bonds);
+      
+      if (state.selectedAtoms.size > 0) {
+        targetAtoms = targetAtoms.filter(a => state.selectedAtoms.has(a.id));
+        targetBonds = targetBonds.filter(b => state.selectedAtoms.has(b.source) && state.selectedAtoms.has(b.target));
+      }
+
+      if (targetAtoms.length === 0) {
+        alert('Vui lòng vẽ hoặc bôi đen cấu trúc để phân tích!');
+        return;
+      }
+
+      const payload = JSON.stringify({
+        atoms: targetAtoms,
+        bonds: targetBonds
+      });
+
+      setIsAnalyzingConformer(true);
+      
+      // Get SMILES first
+      const props = await (window as any).electronAPI.calculateProperties(payload);
+      if (props.error) throw new Error(props.error);
+      if (!props.smiles) throw new Error("Could not generate SMILES for analysis.");
+
+      // Analyze conformers
+      const result = await (window as any).electronAPI.analyzeConformers(props.smiles);
+      if (result.error) throw new Error(result.error);
+      
+      setConformerData(result.conformers);
+      setShowConformer(true);
+    } catch (err: any) {
+      alert('Conformer Analysis failed: ' + err);
+    } finally {
+      setIsAnalyzingConformer(false);
     }
   };
 
@@ -266,6 +427,7 @@ function App() {
 
       // 2. Search ChEMBL
       const result = await (window as any).electronAPI.chemblSearch(props.smiles);
+      if (!result) throw new Error("Kết quả từ Python trả về trống (undefined). Có thể do lỗi cài đặt Python.");
       if (result.error) throw new Error(result.error);
       
       setChemblData(result);
@@ -300,13 +462,19 @@ function App() {
         bonds: targetBonds
       });
 
-      const result = await (window as any).electronAPI.predictNmr(payload);
+      if (!(window as any).electronAPI) {
+          alert('Lỗi: Bạn đang mở ứng dụng trong trình duyệt web thông thường (Chrome/Edge). Các tính năng dự đoán Phổ, 3D, OCR yêu cầu chạy qua ứng dụng Electron (chạy file start.bat và đợi cửa sổ ứng dụng tự hiện lên).');
+          return;
+        }
+        const result = await (window as any).electronAPI.predictNmr(payload);
+      if (!result) throw new Error("Result from IPC is undefined or null");
       if (result.error) throw new Error(result.error);
       
       setNmrData(result);
       setShowNmr(true);
     } catch (err: any) {
-      alert('NMR Prediction failed: ' + err.message);
+      alert('Lỗi dự đoán phổ: ' + (err.message || JSON.stringify(err)));
+      console.error(err);
     } finally {
       setNmrFetching(false);
     }
@@ -437,6 +605,7 @@ function App() {
   };
 
   const handleCopy = () => {
+    setCopyMenuOpen(false);
     const st = useGraphStore.getState();
     const atomList = st.selectedAtoms.size > 0 ? Array.from(st.selectedAtoms) : Object.keys(st.atoms);
     const subAtoms: any = {};
@@ -447,6 +616,139 @@ function App() {
     });
     navigator.clipboard.writeText(JSON.stringify({ atoms: subAtoms, bonds: subBonds }));
   };
+
+  const handleCopyAsSmiles = async () => {
+    setCopyMenuOpen(false);
+    const st = useGraphStore.getState();
+    const atomList = st.selectedAtoms.size > 0 ? Array.from(st.selectedAtoms) : Object.keys(st.atoms);
+    if (atomList.length === 0) {
+      alert("Bản vẽ trống!");
+      return;
+    }
+    const subAtoms: any = {};
+    atomList.forEach(id => subAtoms[id] = st.atoms[id]);
+    const subBonds: any = {};
+    Object.values(st.bonds).forEach(b => {
+      if (subAtoms[b.source] && subAtoms[b.target]) subBonds[b.id] = b;
+    });
+    
+    const payload = JSON.stringify({ atoms: Object.values(subAtoms), bonds: Object.values(subBonds) });
+    try {
+      const props = await (window as any).electronAPI.calculateProperties(payload);
+      if (props.error) throw new Error(props.error);
+      if (!props.smiles) throw new Error("Could not generate SMILES");
+      await navigator.clipboard.writeText(props.smiles);
+      alert("Đã copy SMILES vào Clipboard!");
+    } catch (err: any) {
+      alert("Lỗi tạo SMILES: " + err.message);
+    }
+  };
+
+  const handleCopyAsImage = async () => {
+    setCopyMenuOpen(false);
+    try {
+      const state = useGraphStore.getState();
+      const allAtoms = Object.values(state.atoms);
+      const allImages = Object.values(state.images);
+      if (allAtoms.length === 0 && allImages.length === 0) {
+        alert("Bản vẽ trống!");
+        return;
+      }
+
+      const hasSelection = state.selectedAtoms.size > 0 || state.selectedImages.size > 0;
+      const atoms = hasSelection 
+        ? allAtoms.filter(a => state.selectedAtoms.has(a.id))
+        : allAtoms;
+      const images = hasSelection
+        ? allImages.filter(img => state.selectedImages.has(img.id))
+        : allImages;
+
+      if (atoms.length === 0 && images.length === 0) {
+        alert("Bạn chưa chọn đối tượng nào (hoặc bản vẽ trống)!");
+        return;
+      }
+      
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      atoms.forEach(a => {
+        minX = Math.min(minX, a.x); minY = Math.min(minY, a.y);
+        maxX = Math.max(maxX, a.x); maxY = Math.max(maxY, a.y);
+      });
+      images.forEach(img => {
+        minX = Math.min(minX, img.x); minY = Math.min(minY, img.y);
+        maxX = Math.max(maxX, img.x + img.width); maxY = Math.max(maxY, img.y + img.height);
+      });
+      
+      const PADDING = 40;
+      minX -= PADDING; minY -= PADDING; maxX += PADDING; maxY += PADDING;
+      
+      const width = maxX - minX;
+      const height = maxY - minY;
+
+      const svgNode = document.getElementById('molkanvas-svg');
+      if (!svgNode) return;
+      
+      const clone = svgNode.cloneNode(true) as SVGSVGElement;
+      
+      const uiElements = clone.querySelectorAll('.ui-element');
+      uiElements.forEach(el => el.remove());
+
+      if (hasSelection) {
+        clone.querySelectorAll('[data-atom-id]').forEach(el => {
+          if (!state.selectedAtoms.has(el.getAttribute('data-atom-id')!)) el.remove();
+        });
+        clone.querySelectorAll('[data-image-id]').forEach(el => {
+          if (!state.selectedImages.has(el.getAttribute('data-image-id')!)) el.remove();
+        });
+        clone.querySelectorAll('[data-bond-id]').forEach(el => {
+          const bondId = el.getAttribute('data-bond-id')!;
+          const bond = state.bonds[bondId];
+          if (!bond || !state.selectedAtoms.has(bond.source) || !state.selectedAtoms.has(bond.target)) {
+            el.remove();
+          }
+        });
+      }
+      
+      clone.setAttribute('viewBox', `${minX} ${minY} ${width} ${height}`);
+      clone.setAttribute('width', `${width}`);
+      clone.setAttribute('height', `${height}`);
+      
+      const serializer = new XMLSerializer();
+      const svgString = serializer.serializeToString(clone);
+      
+      const SCALE = 12.5; // 1200 DPI approx
+      const canvas = document.createElement('canvas');
+      canvas.width = width * SCALE;
+      canvas.height = height * SCALE;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      const img = new Image();
+      const svgBlob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
+      const url = URL.createObjectURL(svgBlob);
+      
+      img.onload = async () => {
+        ctx.drawImage(img, 0, 0, width * SCALE, height * SCALE);
+        URL.revokeObjectURL(url);
+        
+        canvas.toBlob(async (blob) => {
+          if (!blob) return;
+          try {
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+            alert("Đã copy hình ảnh chất lượng cao vào Clipboard!");
+          } catch (e) {
+            alert("Lỗi copy ảnh: " + e);
+          }
+        }, 'image/png');
+      };
+      img.src = url;
+    } catch (err) {
+      alert('Lỗi copy ảnh: ' + err);
+    }
+  };
+
 
   const handlePaste = async () => {
     try {
@@ -491,20 +793,39 @@ function App() {
         <div style={{ position: 'relative', display: 'flex' }}>
           <button className="icon-btn" title="Save/Export" onClick={() => setSaveMenuOpen(!saveMenuOpen)}><Ico d={icons.save} /></button>
           {saveMenuOpen && (
-            <div style={{
-              position: 'absolute', top: '100%', left: 0, marginTop: '4px',
-              backgroundColor: 'white', border: '1px solid #ccc', borderRadius: '4px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.1)', zIndex: 100, display: 'flex', flexDirection: 'column',
-              minWidth: '150px'
-            }}>
-              <button onClick={handleSaveProject} style={{ padding: '8px 16px', borderBottom: '1px solid #eee', background: 'none', cursor: 'pointer', textAlign: 'left', whiteSpace: 'nowrap', fontSize: '12px' }}>Save Project (.molk)</button>
-              <button onClick={handleSave2DMol} style={{ padding: '8px 16px', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left', whiteSpace: 'nowrap', fontSize: '12px' }}>Export 2D (.mol)</button>
+            <div className="dropdown-menu">
+              <button className="dropdown-item" onClick={handleSaveProject}>
+                Save Project (.molk)
+              </button>
+              <button className="dropdown-item" onClick={handleSave2DMol}>
+                Export 2D (.mol)
+              </button>
+              <div className="dropdown-sep"></div>
+              <button className="dropdown-item primary" onClick={handleExportHighRes}>
+                Export Image (1200 DPI)
+              </button>
             </div>
           )}
         </div>
         <div className="icon-toolbar__sep" />
         <button className="icon-btn" title="Cut" onClick={handleCut}><Ico d={icons.cut} /></button>
-        <button className="icon-btn" title="Copy" onClick={handleCopy}><Ico d={icons.copy} /></button>
+        <div style={{ position: 'relative', display: 'flex' }}>
+          <button className="icon-btn" title="Copy" onClick={() => setCopyMenuOpen(!copyMenuOpen)}><Ico d={icons.copy} /></button>
+          {copyMenuOpen && (
+            <div className="dropdown-menu">
+              <button className="dropdown-item" onClick={handleCopy}>
+                Copy Structure (JSON)
+              </button>
+              <button className="dropdown-item" onClick={handleCopyAsSmiles}>
+                Copy as SMILES
+              </button>
+              <div className="dropdown-sep"></div>
+              <button className="dropdown-item primary" onClick={handleCopyAsImage}>
+                Copy as Image (High Res)
+              </button>
+            </div>
+          )}
+        </div>
         <button className="icon-btn" title="Paste" onClick={handlePaste}><Ico d={icons.paste} /></button>
         <div className="icon-toolbar__sep" />
         <button className="icon-btn" title="Undo (⌘Z)" onClick={() => useGraphStore.getState().undo()}>
@@ -552,27 +873,22 @@ function App() {
             <Ico d={icons.template} />
           </button>
           {templateMenuOpen && (
-            <div style={{
-              position: 'absolute', top: '100%', left: 0, marginTop: '4px',
-              backgroundColor: 'white', border: '1px solid #ccc', borderRadius: '4px',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 100, display: 'flex', flexDirection: 'column',
-              minWidth: '200px', maxHeight: '400px', overflowY: 'auto', padding: '8px'
-            }}>
-              <h3 style={{ fontSize: '12px', margin: '0 0 8px 4px', color: '#64748b' }}>Templates</h3>
-              {TEMPLATES.map(t => (
-                <button
-                  key={t.name}
-                  onClick={() => handleTemplateClick(t.smiles)}
-                  style={{
-                    padding: '8px', textAlign: 'left', fontSize: '12px', background: 'none',
-                    border: 'none', borderRadius: '4px', cursor: 'pointer', color: '#334155'
-                  }}
-                  onMouseOver={(e) => (e.currentTarget.style.background = '#f1f5f9')}
-                  onMouseOut={(e) => (e.currentTarget.style.background = 'none')}
-                >
-                  {t.name}
-                </button>
-              ))}
+            <div className="dropdown-menu" style={{ minWidth: '200px', maxHeight: '400px', overflowY: 'auto' }}>
+              <h3 style={{ fontSize: '12px', margin: '4px 8px 8px 8px', color: '#64748b' }}>Templates</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', padding: '0 4px' }}>
+                {TEMPLATES.map(t => (
+                  <button key={t.name}
+                    className="dropdown-item"
+                    style={{ padding: '4px 8px', justifyContent: 'center' }}
+                    onClick={() => {
+                      handleTemplateClick(t.smiles);
+                      setTemplateMenuOpen(false);
+                    }}
+                  >
+                    {t.name}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -581,29 +897,21 @@ function App() {
             <Ico d={icons.shapes} />
           </button>
           {shapeMenuOpen && (
-            <div style={{
-              position: 'absolute', top: '100%', left: 0, marginTop: '4px',
-              backgroundColor: 'white', border: '1px solid #ccc', borderRadius: '4px',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 100, display: 'flex', flexDirection: 'column',
-              minWidth: '220px', maxHeight: '400px', overflowY: 'auto', padding: '8px'
-            }}>
-              <h3 style={{ fontSize: '12px', margin: '0 0 8px 4px', color: '#64748b' }}>Apparatus & Shapes</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+            <div className="dropdown-menu" style={{ minWidth: '220px', maxHeight: '400px', overflowY: 'auto' }}>
+              <h3 style={{ fontSize: '12px', margin: '4px 8px 8px 8px', color: '#64748b' }}>Apparatus & Shapes</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', padding: '0 4px' }}>
                 {SHAPE_TEMPLATES.map(s => (
-                  <button
-                    key={s.name}
-                    onClick={() => handleShapeClick(s)}
+                  <button key={s.name}
+                    className="dropdown-item"
+                    style={{ padding: '4px', flexDirection: 'column', alignItems: 'center' }}
                     title={s.name}
-                    style={{
-                      padding: '8px', display: 'flex', flexDirection: 'column', alignItems: 'center',
-                      fontSize: '10px', background: 'none', border: '1px solid #e2e8f0', borderRadius: '6px',
-                      cursor: 'pointer', color: '#334155'
+                    onClick={() => {
+                      handleShapeClick(s);
+                      setShapeMenuOpen(false);
                     }}
-                    onMouseOver={(e) => (e.currentTarget.style.background = '#f1f5f9')}
-                    onMouseOut={(e) => (e.currentTarget.style.background = 'none')}
                   >
-                    <img src={s.svgDataUrl} style={{ width: '40px', height: '40px', objectFit: 'contain', marginBottom: '4px' }} alt={s.name} />
-                    <span style={{ textAlign: 'center', lineHeight: '1.2' }}>{s.name}</span>
+                    <img src={s.svgDataUrl} alt={s.name} style={{ width: '40px', height: '40px', objectFit: 'contain', marginBottom: '4px' }} />
+                    <span style={{ fontSize: '10px' }}>{s.name}</span>
                   </button>
                 ))}
               </div>
@@ -613,12 +921,42 @@ function App() {
         <button className="icon-btn" title="Generate 3D Structure" onClick={handleGenerate3D} style={{ color: '#059669' }}>
           <Ico d={icons.view3d} />
         </button>
+        <button className="icon-btn" title={isAnalyzingConformer ? "Analyzing Conformers..." : "Analyze Conformers (Energy Landscape)"} onClick={handleAnalyzeConformers} style={{ color: isAnalyzingConformer ? '#94a3b8' : '#8b5cf6' }} disabled={isAnalyzingConformer}>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+            <path d="M3 3v18h18v-2H5V3H3zm16.5 4.5l-4.5 4.5-3-3-4.5 4.5 1.5 1.5 3-3 3 3 6-6-1.5-1.5z"/>
+          </svg>
+        </button>
         <button className="icon-btn" title={chemblFetching ? "Searching Database..." : "ChEMBL Bioactivity Search"} onClick={handleChemblSearch} style={{ color: chemblFetching ? '#94a3b8' : '#ef4444' }} disabled={chemblFetching}>
           <Ico d={icons.database} />
         </button>
         <button className="icon-btn" title={nmrFetching ? "Predicting NMR..." : "Predict 1H-NMR Spectrum"} onClick={handlePredictNmr} style={{ color: nmrFetching ? '#94a3b8' : '#f59e0b' }} disabled={nmrFetching}>
           <Ico d={icons.nmr} />
         </button>
+        <div className="icon-toolbar__sep" />
+        <div style={{ position: 'relative', display: 'flex' }}>
+          <button className="icon-btn" title="Document Settings (Style)" onClick={() => setDocStyleMenuOpen(!docStyleMenuOpen)} style={{ color: '#475569', fontSize: 10, fontWeight: 700, width: 36 }}>
+            Doc
+          </button>
+          {docStyleMenuOpen && (
+            <div className="dropdown-menu" style={{ right: 0, left: 'auto' }}>
+              <h3 style={{ fontSize: '11px', margin: '4px 8px', color: '#64748b', textTransform: 'uppercase' }}>Document Style</h3>
+              <button 
+                className="dropdown-item"
+                style={{ background: useGraphStore.getState().documentStyle === 'DEFAULT' ? '#eff6ff' : 'transparent', color: useGraphStore.getState().documentStyle === 'DEFAULT' ? '#2563eb' : 'inherit' }}
+                onClick={() => { useGraphStore.getState().setDocumentStyle('DEFAULT'); setDocStyleMenuOpen(false); }}
+              >
+                Default Style
+              </button>
+              <button 
+                className="dropdown-item"
+                style={{ background: useGraphStore.getState().documentStyle === 'ACS_1996' ? '#eff6ff' : 'transparent', color: useGraphStore.getState().documentStyle === 'ACS_1996' ? '#2563eb' : 'inherit' }}
+                onClick={() => { useGraphStore.getState().setDocumentStyle('ACS_1996'); setDocStyleMenuOpen(false); }}
+              >
+                ACS Document 1996
+              </button>
+            </div>
+          )}
+        </div>
         <div className="icon-toolbar__sep" />
         <button className="icon-btn" title="Toggle Properties Panel" onClick={() => setShowRightPanel(!showRightPanel)} style={{ color: showRightPanel ? '#2563eb' : '#64748b' }}>
           <Ico d={icons.sidebar} />
@@ -674,7 +1012,7 @@ function App() {
                 </div>
               </form>
               <form onSubmit={handleIupacToStructure} style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
-                <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>IUPAC TO STRUCTURE 🌐</label>
+                <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>IUPAC TO STRUCTURE</label>
                 <div style={{ display: 'flex', gap: '4px' }}>
                   <input 
                     type="text" 
@@ -694,7 +1032,7 @@ function App() {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>IUPAC NAME 🌐</label>
+                  <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>IUPAC NAME</label>
                   <button 
                     onClick={handleFetchIupac}
                     disabled={!propsData?.smiles || isFetchingIupac}
@@ -781,6 +1119,9 @@ function App() {
       </div>
       {show3D && sdfData && (
         <Viewer3D sdfData={sdfData} onClose={() => setShow3D(false)} />
+      )}
+      {showConformer && conformerData && (
+        <ConformerViewer conformers={conformerData} onClose={() => setShowConformer(false)} />
       )}
       {showChembl && chemblData && (
         <ChemblResult data={chemblData} onClose={() => setShowChembl(false)} />
