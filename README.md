@@ -7,7 +7,7 @@ Xây dựng bằng **Electron + React + Python (RDKit)**.
 
 ---
 
-## ✨ Tính năng
+## Tính năng
 
 | Tính năng | Mô tả |
 |-----------|-------|
@@ -25,7 +25,7 @@ Xây dựng bằng **Electron + React + Python (RDKit)**.
 
 ---
 
-## 🗂️ Cấu trúc dự án
+## Cấu trúc dự án
 
 Đây là thư mục làm việc chính của MolKanvas. Bạn có thể copy toàn bộ thư mục này đi bất cứ đâu.
 
@@ -58,7 +58,7 @@ molkanvas/                        ← Copy toàn bộ folder này
 
 ---
 
-## 🚀 Cài đặt (Self-contained)
+## Cài đặt (Self-contained)
 
 ### Yêu cầu
 
@@ -69,7 +69,7 @@ molkanvas/                        ← Copy toàn bộ folder này
 
 ---
 
-### 🪟 Windows — Cài 1-click
+### Windows — Cài 1-click
 
 ```
 1. Mở folder molkanvas (thư mục chứa file này)
@@ -80,7 +80,7 @@ molkanvas/                        ← Copy toàn bộ folder này
 
 ---
 
-### 🍎 macOS / Linux
+### MacOS / Linux
 
 ```bash
 # Vào thư mục dự án
@@ -107,15 +107,3 @@ npm run app:dev
 
 ---
 
-## ⚠️ Lưu ý quan trọng khi Copy sang máy khác
-**KHÔNG ĐƯỢC COPY các thư mục sau (nếu nén file gửi cho người khác, hãy xóa chúng trước):**
-1. \`node_modules/\` (Thư viện Node)
-2. \`ocr/.venv/\` (Môi trường Python)
-3. \`dist/\` (File build)
-4. \`__pycache__/\`
-
-**Lý do lỗi Phổ / 3D khi copy:** 
-Môi trường ảo của Python (\`.venv\`) sử dụng **đường dẫn tuyệt đối** được mã hóa cứng vào file thực thi bên trong nó. Nếu bạn copy folder \`.venv\` sang máy khác hoặc sang thư mục khác, đường dẫn này sẽ bị sai lệch khiến RDKit không chạy được (dẫn đến mất tính năng 3D, phổ).
-
-**Cách giải quyết:**
-Khi mang sang máy khác, bạn **chỉ cần copy mã nguồn**, và BẮT BUỘC phải **chạy lại file \`install.bat\`**. File này sẽ tự động tải lại môi trường Node và tạo lại \`.venv\` chuẩn xác cho thư mục hiện tại.
