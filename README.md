@@ -1,4 +1,4 @@
-# MolKanvas ⚗️
+# MolKanvas
 
 > **Author:** Manh-Son Nguyen &nbsp;|&nbsp; **Version:** 1.0.0 &nbsp;|&nbsp; **License:** MIT
 
@@ -11,17 +11,17 @@ Xây dựng bằng **Electron + React + Python (RDKit)**.
 
 | Tính năng | Mô tả |
 |-----------|-------|
-| 🖊️ **Vẽ cấu trúc** | Liên kết, vòng, stereo bond (wedge/hash) |
-| 🔄 **SMILES / IUPAC** | Nhập SMILES → render cấu trúc; tra tên IUPAC |
-| 🔬 **3D Visualization** | Xem cấu trúc 3D với 3Dmol.js |
-| 📊 **NMR Prediction** | Dự đoán phổ ¹H NMR, ¹³C NMR (offline) |
-| 🌡️ **IR Prediction** | Dự đoán phổ hồng ngoại theo nhóm chức |
-| 🧫 **BioDraw** | Lipid bilayer, kháng thể, DNA, thụ thể |
-| 🧬 **Peptide/DNA** | Nhập chuỗi amino acid / nucleotide → cấu trúc 2D |
-| 🧪 **TLC Simulator** | Mô phỏng sắc ký bản mỏng |
-| 💊 **ChEMBL Search** | Tra hoạt tính sinh học từ database ChEMBL |
-| 🏷️ **Physicochemical** | MW, LogP, TPSA, Lipinski |
-| 🎯 **Stereo Analysis** | Phân tích R/S, E/Z tự động |
+| **Vẽ cấu trúc** | Liên kết, vòng, stereo bond (wedge/hash) |
+| **SMILES / IUPAC** | Nhập SMILES → render cấu trúc; tra tên IUPAC |
+| **3D Visualization** | Xem cấu trúc 3D với 3Dmol.js |
+| **NMR Prediction** | Dự đoán phổ ¹H NMR, ¹³C NMR (offline) |
+| **IR Prediction** | Dự đoán phổ hồng ngoại theo nhóm chức |
+| **BioDraw** | Lipid bilayer, kháng thể, DNA, thụ thể |
+| **Peptide/DNA** | Nhập chuỗi amino acid / nucleotide → cấu trúc 2D |
+| **TLC Simulator** | Mô phỏng sắc ký bản mỏng |
+| **ChEMBL Search** | Tra hoạt tính sinh học từ database ChEMBL |
+| **Physicochemical** | MW, LogP, TPSA, Lipinski |
+| **Stereo Analysis** | Phân tích R/S, E/Z tự động |
 
 ---
 
