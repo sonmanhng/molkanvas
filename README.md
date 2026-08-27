@@ -94,6 +94,12 @@ pip install rdkit
 deactivate
 cd ..
 
+
+cd ocr
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install rdkit DECIMER tensorflow scikit-image pillow scipy pyinstaller
+
 # Cài Node + chạy app
 npm install
 npm run app:dev
